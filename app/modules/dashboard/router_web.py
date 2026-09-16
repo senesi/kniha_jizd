@@ -13,6 +13,7 @@ from app.core.deps import get_current_user
 from app.core.fleet_status import vehicle_deadlines
 from app.core.templates import render_page
 from app.models.core import User
+from app.modules.trips import repository as trips_repository
 from app.modules.vehicles import repository as vehicles_repository
 
 router = APIRouter(tags=["dashboard-web"])
@@ -31,6 +32,7 @@ async def dashboard(
     counts = {
         "total": len(vehicles),
         "active": len(active),
+        "borrowed": await trips_repository.count_active_trips(db),
         "in_service": len([v for v in active if v.status == "in_service"]),
         "blocked": len([v for v in active if v.status == "blocked"]),
     }
@@ -53,4 +55,5 @@ async def dashboard(
     return await render_page(
         request, "dashboard.html", user, db,
         counts=counts, attention=attention, my_vehicles=my_vehicles,
+        my_active_trips=await trips_repository.list_active_trips_for_user(db, user.id),
     )

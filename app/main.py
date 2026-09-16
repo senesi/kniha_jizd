@@ -12,6 +12,7 @@ from app.modules.auth.router_web import router as auth_web_router
 from app.modules.dashboard.router_web import router as dashboard_web_router
 from app.modules.notifications.router_web import router as notifications_router
 from app.modules.settings.router_web import router as settings_router
+from app.modules.trips.router_web import trips_router, vehicle_trips_router
 from app.modules.users.router_web import account_router, users_router
 from app.modules.vehicles.router_web import attachments_router, qr_landing_router, vehicles_router
 
@@ -78,11 +79,13 @@ app.include_router(dashboard_web_router, prefix="/kniha-jizd")
 app.include_router(vehicles_router, prefix="/kniha-jizd")
 app.include_router(attachments_router, prefix="/kniha-jizd")
 app.include_router(qr_landing_router, prefix="/kniha-jizd")
+app.include_router(vehicle_trips_router, prefix="/kniha-jizd")
+app.include_router(trips_router, prefix="/kniha-jizd")
 app.include_router(notifications_router, prefix="/kniha-jizd")
 app.include_router(settings_router, prefix="/kniha-jizd")
 app.include_router(users_router, prefix="/kniha-jizd")
 app.include_router(account_router, prefix="/kniha-jizd")
-# Další moduly (výpůjčky, rezervace, závady, servis, dokumenty, kniha
+# Další moduly (rezervace, závady, servis, dokumenty, kniha
 # jízd) se registrují tady, jakmile vzniknou - viz etapy v
 # zadání_projektu.md, kapitola 35. Aplikace zůstává spustitelná po každé
 # etapě, ne až na konci.

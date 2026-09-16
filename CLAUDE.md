@@ -31,10 +31,10 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | Etapa | Obsah | Stav |
 |---|---|---|
 | 1 | projekt, autentizace, uživatelé, vozidla, odpovědné osoby, QR, mobilní UI, dashboard | **hotovo** |
-| 2 | výpůjčky (start/konec, km, nádrž, tachometr, foto, účel, trasa, další řidiči) | připraveno v modelu, chybí implementace |
+| 2 | výpůjčky (start/konec, km, nádrž, tachometr, foto, účel, trasa, další řidiči) | **hotovo** |
 | 3 | rezervace a kalendář | připraveno v modelu (+ DB zákaz překryvu) |
 | 4 | závady | připraveno v modelu |
-| 5 | tankování / nabíjení, účtenky, OCR infrastruktura | připraveno v modelu |
+| 5 | tankování / nabíjení, účtenky, OCR infrastruktura | model + rozhraní `app/core/ocr.py` hotové, chybí poskytovatel a samotné tankování |
 | 6 | servis a dokumenty vozidla | připraveno v modelu |
 | 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | neimplementováno |
@@ -101,10 +101,13 @@ tam, až modul vznikne.
 app/
   core/        průřezové věci: config, db, deps (oprávnění), csrf, audit,
                photos, documents, mailer, app_settings, fleet_status
-               (semafor), fuel (l vs. kWh), labels, flash, templates
+               (semafor), fuel (l vs. kWh), ocr (pomůcka, ne závislost),
+               labels, flash, templates
   models/      core.py (uživatelé, role, audit, nastavení)
                fleet.py (celá doména vozidel)
   modules/     <modul>/{router_web,service,repository,schemas}.py
+               hotové: auth, dashboard, vehicles, trips, users,
+               notifications, settings
   templates/   Jinja2, mobile-first, Tailwind přes CDN
   static/      vendorované JS (qr-scanner), favicony
 ```
@@ -131,6 +134,21 @@ Role: `admin`, `odpovedna_osoba`, `user` (řidič). Zakládá je migrace
 - `require_any_permission(...)` je jen hrubý filtr („nemá ani jedno z
   toho"). Rozhodnutí o konkrétním vozidle vždy patří do těla routy.
 - Skrytí tlačítka v šabloně není kontrola oprávnění.
+
+## 7b. Validace: kdy blokovat a kdy se zeptat
+
+Zadání 32 chce raději upozornit a vyžádat potvrzení než tvrdě blokovat.
+V kódu jsou to dvě různé výjimky (`app/modules/trips/service.py`):
+
+- `TripError` — jednoznačně neplatný vstup, neuloží se nikdy (konečný km
+  nižší než počáteční, stav km jdoucí zpět, chybějící trasa nebo účel).
+- `TripWarning` — podezřelé, ale možná správné. Nese kód, který se
+  uživateli zobrazí jako zaškrtávátko; teprve když ho pošle zpátky
+  (`confirm=<kód>`), akce projde. Každé potvrzení se ukládá do auditu,
+  takže je z historie vidět, že to člověk viděl a rozhodl.
+
+Nové varování se přidává vyhozením `TripWarning` — formulář ho vykreslí
+sám, není potřeba sahat do šablony.
 
 ## 8. Bezpečnostní zásady projektu
 

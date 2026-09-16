@@ -26,7 +26,7 @@ __all__ = [
     "ALLOWED_PHOTO_EXTENSIONS", "MAX_PHOTO_UPLOAD_BYTES", "PhotoTooLarge", "UnsupportedPhotoType",
     "DuplicateInternalCode", "OdometerCorrectionError",
     "generate_qr_token", "create_vehicle", "update_vehicle", "correct_odometer",
-    "add_attachment", "delete_attachment",
+    "add_attachment", "link_attachment_to_trip", "delete_attachment",
 ]
 
 
@@ -190,6 +190,25 @@ async def add_attachment(
         await db.commit()
         await db.refresh(attachment)
     return attachment
+
+
+async def link_attachment_to_trip(
+    db: AsyncSession, *, attachment_id: uuid.UUID, vehicle_id: uuid.UUID, trip_id: uuid.UUID, commit: bool = False,
+) -> None:
+    """Přiřadí už nahranou fotografii ke vzniklé jízdě.
+
+    Potřeba kvůli potvrzování OCR: fotka se nahraje při prvním odeslání
+    formuláře (jinak by se při druhém kroku ztratila - file input se
+    předvyplnit nedá), ale jízda v tu chvíli ještě neexistuje. Kontrola
+    `vehicle_id` je tu proto, aby se cizí příloha nedala takhle
+    přivlastnit podvrženým id ve skrytém poli (IDOR)."""
+    attachment = await db.get(Attachment, attachment_id)
+    if attachment is None or attachment.vehicle_id != vehicle_id or attachment.deleted_at is not None:
+        raise ValueError("Fotografie k tomuto vozidlu nebyla nalezena.")
+    attachment.trip_id = trip_id
+    await db.flush()
+    if commit:
+        await db.commit()
 
 
 async def delete_attachment(db: AsyncSession, attachment: Attachment, actor_id: uuid.UUID) -> None:

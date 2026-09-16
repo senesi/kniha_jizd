@@ -8,6 +8,25 @@
 
 {# Na mobilu je první věc, kterou řidič potřebuje, cesta k autu -
    ne statistiky. Ty jsou hned pod tím. #}
+{% if my_active_trips %}
+<div class="mb-6">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Máte rozjetou výpůjčku</h2>
+  <div class="grid gap-2">
+    {% for trip in my_active_trips %}
+    <a href="/kniha-jizd/trips/{{ trip.id }}" class="kj-card !p-4 block border-l-4 !border-l-accent hover:bg-surface">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="font-extrabold">{{ trip.vehicle.license_plate }}</div>
+          <div class="text-xs text-muted2">od {{ trip.started_at | dt }} &middot; {{ trip.start_odometer_km | km }} km</div>
+        </div>
+        <span class="kj-badge bg-accent text-white shrink-0">Ukončit &rarr;</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="grid sm:grid-cols-2 gap-3 mb-6">
   <a href="/kniha-jizd/scan" class="kj-btn-hero">📷 Načíst QR kód vozidla</a>
   <a href="/kniha-jizd/vehicles" class="kj-btn-secondary !min-h-[56px] !text-base">Vybrat vozidlo ze seznamu</a>
@@ -17,8 +36,8 @@
   {% for label, value in [
     ("Vozidel celkem", counts.total),
     ("Aktivních", counts.active),
+    ("Právě vypůjčeno", counts.borrowed),
     ("V servisu", counts.in_service),
-    ("Mimo provoz", counts.blocked),
   ] %}
   <div class="kj-card !p-4">
     <div class="text-xs font-bold uppercase tracking-wide text-muted2">{{ label }}</div>

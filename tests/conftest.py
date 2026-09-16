@@ -177,3 +177,26 @@ async def create_vehicle(ac: AsyncClient, csrf: str, **overrides) -> str:
     response = await ac.post("/kniha-jizd/vehicles/new", data=data, follow_redirects=False)
     assert response.status_code == 303, response.text
     return response.headers["location"].split("/vehicles/")[1].split("?")[0]
+
+
+MULTIPART_BOUNDARY = "----WebKitFormBoundaryTEST"
+
+
+def browser_multipart(fields: dict[str, str], *, empty_file_field: str) -> bytes:
+    """Přesně to, co pošle prohlížeč u formuláře s nevyplněným souborovým
+    polem: part se NEVYNECHÁ, pošle se s prázdným filename.
+
+    Testovací klienti to dělají jinak, takže tenhle tvar jde sestavit jen
+    ručně - a právě on je v terénu nejčastější (řidič fotku nepořídí)."""
+    parts = [
+        f"--{MULTIPART_BOUNDARY}\r\n"
+        f'Content-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'
+        for name, value in fields.items()
+    ]
+    parts.append(
+        f"--{MULTIPART_BOUNDARY}\r\n"
+        f'Content-Disposition: form-data; name="{empty_file_field}"; filename=""\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n\r\n"
+    )
+    parts.append(f"--{MULTIPART_BOUNDARY}--\r\n")
+    return "".join(parts).encode("utf-8")

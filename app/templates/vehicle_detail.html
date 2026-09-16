@@ -17,6 +17,29 @@
   <a href="/kniha-jizd/vehicles" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
 </div>
 
+{# Hlavní akce hned pod hlavičkou: řidič, který přišel od QR kódu, sem
+   chodí kvůli jediné věci (zadání 7/28). #}
+{% if active_trip %}
+<div class="rounded-2xl bg-accent/10 border border-accent/30 p-4 mb-4">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <div class="text-sm font-extrabold text-accent">Vozidlo je právě vypůjčené</div>
+      <div class="text-sm text-subtle mt-1">
+        {{ active_trip.primary_driver.full_name }} &middot; od {{ active_trip.started_at | dt }}
+        &middot; {{ active_trip.start_odometer_km | km }} km
+      </div>
+    </div>
+  </div>
+  <a href="/kniha-jizd/trips/{{ active_trip.id }}" class="kj-btn w-full mt-3">Otevřít probíhající jízdu</a>
+</div>
+{% elif can_start_trip and vehicle.is_active %}
+<a href="/kniha-jizd/vehicles/{{ vehicle.id }}/trips/start" class="kj-btn-hero mb-4">Zahájit výpůjčku</a>
+{% elif not vehicle.is_active %}
+<div class="rounded-2xl bg-muted/10 border border-divider p-4 mb-4 text-sm font-semibold text-muted2">
+  Vozidlo je neaktivní a nelze si ho půjčit.
+</div>
+{% endif %}
+
 <!-- Aktuální stav -->
 <div class="kj-card mb-4">
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -127,6 +150,36 @@
   </div>
   {% else %}
   <p class="text-sm text-muted">Žádné fotografie.</p>
+  {% endif %}
+</div>
+
+<!-- Poslední jízdy -->
+<div class="kj-card mb-4">
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Poslední jízdy</h2>
+  </div>
+  {% if recent_trips %}
+  <ul class="divide-y divide-divider-soft">
+    {% for trip in recent_trips %}
+    <li>
+      <a href="/kniha-jizd/trips/{{ trip.id }}" class="flex items-center justify-between gap-3 py-2.5 hover:text-accent">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold truncate">{{ trip.primary_driver.full_name }}</div>
+          <div class="text-xs text-muted2 truncate">
+            {{ trip.started_at | d }}
+            {% if trip.route_text %}&middot; {{ trip.route_text }}{% endif %}
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-sm font-bold">{% if trip.distance_km is not none %}{{ trip.distance_km | km }} km{% else %}probíhá{% endif %}</div>
+          <div class="text-xs text-muted">{{ labels.TRIP_STATUS.get(trip.status, trip.status) }}</div>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-muted">Zatím žádná jízda.</p>
   {% endif %}
 </div>
 

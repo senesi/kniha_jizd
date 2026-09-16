@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import level_picker, level_picker_script, warning_box, ocr_box %}
+{% block title %}Ukončit výpůjčku &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% macro value_of(name, fallback=none) %}{% if form.get(name) is not none %}{{ form.get(name) }}{% elif fallback is not none %}{{ fallback }}{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Ukončit výpůjčku</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; od {{ trip.started_at | dt }} &middot; {{ trip.start_odometer_km | km }} km</p>
+  </div>
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/trips/{{ trip.id }}/end" enctype="multipart/form-data">
+  {{ csrf_field(request) }}
+  {% if odometer_attachment_id %}
+  <input type="hidden" name="odometer_attachment_id" value="{{ odometer_attachment_id }}">
+  {% endif %}
+
+  {{ warning_box(warnings) }}
+  {{ ocr_box(ocr_suggestion, form.get('end_odometer_km')) }}
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Stav tachometru</h2>
+    <label class="kj-label">Konečný stav km <span class="text-danger">*</span></label>
+    <input class="kj-input !text-2xl !font-extrabold !min-h-[60px]" type="number" name="end_odometer_km"
+           inputmode="numeric" required min="{{ trip.start_odometer_km }}" data-odometer-input
+           value="{{ value_of('end_odometer_km') }}" placeholder="{{ trip.start_odometer_km }}">
+    <p class="text-xs text-muted mt-1">Počáteční stav byl {{ trip.start_odometer_km | km }} km.</p>
+
+    <label class="kj-label">Fotografie tachometru</label>
+    <input class="kj-input !py-3" type="file" name="odometer_photo" accept="image/*" capture="environment">
+  </div>
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">{{ fuel.level_label(vehicle.fuel_type) }}</h2>
+    {{ level_picker("end_fuel_level", fuel.level_label(vehicle.fuel_type), form.get('end_fuel_level')) }}
+  </div>
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Účel a trasa</h2>
+
+    <label class="kj-label">Účel jízdy <span class="text-danger">*</span></label>
+    {# Dlaždice místo <select>: na mobilu jeden dotek místo rolování v
+       nativním pickeru (zadání 13 - povinné, ale jednoduché). #}
+    {% set chosen_purpose = form.get('purpose_code') %}
+    <div class="grid grid-cols-2 gap-2">
+      {% for purpose in purposes %}
+      <label class="flex items-center gap-2 rounded-xl border border-border2 bg-white px-3 py-3 cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5">
+        <input type="radio" name="purpose_code" value="{{ purpose }}" required
+               class="w-5 h-5 text-accent focus:ring-accent"
+               {% if purpose == chosen_purpose %}checked{% endif %}>
+        <span class="text-sm font-bold">{{ labels.TRIP_PURPOSE.get(purpose, purpose) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <label class="kj-label">Upřesnění účelu</label>
+    <input class="kj-input" name="purpose_text" maxlength="255" value="{{ value_of('purpose_text') }}"
+           placeholder="povinné jen u účelu „Jiný“">
+
+    <label class="kj-label">Trasa <span class="text-danger">*</span></label>
+    <input class="kj-input" name="route_text" required value="{{ value_of('route_text') }}"
+           placeholder="Mladá Boleslav – Zlatá Olešnice – Mladá Boleslav">
+
+    <label class="kj-label">Poznámka</label>
+    <textarea class="kj-input" name="note" rows="2">{{ value_of('note') }}</textarea>
+  </div>
+
+  <button type="submit" class="kj-btn-hero">Ukončit výpůjčku</button>
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="kj-btn-secondary w-full mt-2">Zpět</a>
+</form>
+
+{{ level_picker_script() }}
+{% endblock %}

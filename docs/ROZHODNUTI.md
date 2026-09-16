@@ -157,3 +157,65 @@ poslat odkaz, který mu uvnitř aplikace zobrazí libovolnou větu.
 různými cestami. Sdílené jméno cookie nebo sdílený secret by z nich
 udělal jeden bezpečnostní celek — přihlášení do jedné by znamenalo
 přihlášení do druhé. Aplikace mají zůstat oddělené.
+
+---
+
+## R11 — Fotka tachometru se ukládá dřív, než vznikne jízda
+
+**Rozhodnutí.** Když OCR přečte jinou hodnotu, než jakou řidič zadal,
+aplikace se zeptá — a fotku v tu chvíli **už uloží** a do formuláře
+pošle jen její id (`odometer_attachment_id`). Po potvrzení se přílohu
+jen naváže na vzniklou jízdu
+(`vehicles/service.py:link_attachment_to_trip`).
+
+**Proč.** `<input type="file">` nejde předvyplnit. Bez tohohle kroku by
+se fotka mezi prvním a druhým odesláním formuláře ztratila a řidič by
+musel tachometr fotit znovu — v terénu nepřijatelné.
+
+**Co to stojí.** Když uživatel formulář v tu chvíli opustí, zůstane u
+vozidla příloha bez jízdy. Do galerie vozidla se nedostane (ta bere jen
+`kind="vehicle_photo"`), takže nic nerozbije.
+
+**Bezpečnost.** `link_attachment_to_trip` ověřuje, že příloha patří
+tomu vozidlu, ke kterému se jízda zakládá — jinak by podvržené id ve
+skrytém poli umožnilo přivlastnit si cizí fotografii (IDOR). Pokryto
+testem `test_cross_vehicle_attachment_cannot_be_hijacked`.
+
+---
+
+## R12 — Stav vozidla se posouvá už při zahájení jízdy
+
+**Rozhodnutí.** `start_trip` aktualizuje `current_odometer_km` a
+`current_fuel_level`, nejen `end_trip`. Posun je vždy jen nahoru
+(`max(...)`).
+
+**Proč.** Co řidič právě přečetl na tachometru, je novější údaj než
+poslední uzavřená jízda. Kdyby se stav aktualizoval až při vrácení,
+další člověk, který k vozidlu přijde během probíhající výpůjčky, by
+viděl zastaralé číslo.
+
+---
+
+## R13 — Zrušená jízda nevrací tachometr zpět
+
+**Rozhodnutí.** `cancel_trip` přepne stav na `cancelled`, doplní
+poznámku s důvodem a řádek ponechá. Stav vozidla se nevrací.
+
+**Proč.** Zrušení řeší „omylem jsem zmáčkl Zahájit", ne „ta hodnota
+byla špatně". Zadaný stav km je skutečný údaj, který někdo na vozidle
+viděl. Na opravu chybné hodnoty je administrativní oprava (R5), která
+si vyžádá zdůvodnění.
+
+---
+
+## R14 — Uzavřít výpůjčku smí i správce vozidla
+
+**Rozhodnutí.** `can_end_trip` pustí primárního řidiče, každého dalšího
+řidiče, držitele `fleet.trip.manage` a správce daného vozidla
+(`fleet.vehicle.manage` nebo `.own` proti `responsible_user_id`).
+
+**Proč.** Zapomenutá otevřená výpůjčka blokuje vozidlo pro všechny
+ostatní — kvůli databázovému pravidlu „nejvýše jedna aktivní jízda na
+vozidlo" (R4). Musí existovat někdo, kdo ji umí zavřít, aniž by se
+čekalo na administrátora. Kdo jízdu skutečně uzavřel, zůstává v
+`ended_by`.

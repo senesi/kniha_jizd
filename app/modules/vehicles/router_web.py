@@ -23,6 +23,7 @@ from app.core.fleet_status import vehicle_deadlines, worst_level
 from app.core.templates import render_page
 from app.models.core import User
 from app.models.fleet import FUEL_TYPES, VEHICLE_STATUSES, VEHICLE_TYPES, Vehicle
+from app.modules.trips import repository as trips_repository
 from app.modules.vehicles import repository, service
 from app.modules.vehicles.schemas import VehicleCreate, VehicleUpdate
 
@@ -198,6 +199,11 @@ async def vehicle_detail(
         deadlines=vehicle_deadlines(vehicle, thresholds),
         assignments=await repository.list_assignments(db, vehicle.id),
         can_manage=can_manage_vehicle(codes, vehicle, user),
+        # Jestli je vozidlo zrovna vypůjčené, se odvozuje z otevřené jízdy,
+        # ne z uloženého příznaku (ten by se mohl rozejít se skutečností).
+        active_trip=await trips_repository.get_active_trip_for_vehicle(db, vehicle.id),
+        recent_trips=await trips_repository.list_trips_for_vehicle(db, vehicle.id, limit=5),
+        can_start_trip="fleet.trip.create" in codes,
     )
 
 

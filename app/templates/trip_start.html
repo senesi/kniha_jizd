@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import deadline_row, level_picker, level_picker_script, warning_box, ocr_box %}
+{% block title %}Zahájit výpůjčku &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% block content %}
+{# Jeden krok: zkontrolovat, vyfotit, potvrdit. Druhá obrazovka se objeví
+   jen když je co rozhodnout (zadání 28 - minimum kliknutí). #}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Zahájit výpůjčku</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+{% if last_trip %}
+<div class="kj-card !p-4 mb-4">
+  <div class="text-xs font-bold uppercase tracking-wide text-muted2 mb-1">Poslední jízda</div>
+  <div class="text-sm">
+    <strong>{{ last_trip.primary_driver.full_name }}</strong> &middot; {{ last_trip.ended_at | dt }}
+    &middot; {{ last_trip.end_odometer_km | km }} km
+  </div>
+  {% if last_trip.route_text %}<div class="text-sm text-muted2">{{ last_trip.route_text }}</div>{% endif %}
+  {% if last_trip.note %}<div class="text-sm text-muted2 mt-1">„{{ last_trip.note }}“</div>{% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/trips/start" enctype="multipart/form-data">
+  {{ csrf_field(request) }}
+  {% if odometer_attachment_id %}
+  <input type="hidden" name="odometer_attachment_id" value="{{ odometer_attachment_id }}">
+  {% endif %}
+
+  {{ warning_box(warnings) }}
+  {{ ocr_box(ocr_suggestion, form.get('start_odometer_km')) }}
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Stav tachometru</h2>
+    <label class="kj-label">Stav km <span class="text-danger">*</span></label>
+    <input class="kj-input !text-2xl !font-extrabold !min-h-[60px]" type="number" name="start_odometer_km"
+           inputmode="numeric" required min="0" data-odometer-input
+           value="{{ form.get('start_odometer_km') if form.get('start_odometer_km') is not none else vehicle.current_odometer_km }}">
+    <p class="text-xs text-muted mt-1">Poslední známý stav: {{ vehicle.current_odometer_km | km }} km</p>
+
+    <label class="kj-label">Fotografie tachometru</label>
+    {# capture="environment" otevře na telefonu rovnou zadní fotoaparát.
+       Nepovinné - když se fotit nedá, jízda se zahájí i bez toho. #}
+    <input class="kj-input !py-3" type="file" name="odometer_photo" accept="image/*" capture="environment">
+    <p class="text-xs text-muted mt-1">Nepovinné, ale doporučené – fotka zůstane u jízdy jako doklad.</p>
+  </div>
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">{{ fuel.level_label(vehicle.fuel_type) }}</h2>
+    {{ level_picker("start_fuel_level", fuel.level_label(vehicle.fuel_type),
+                    form.get('start_fuel_level') if form.get('start_fuel_level') is not none else vehicle.current_fuel_level) }}
+  </div>
+
+  <button type="submit" class="kj-btn-hero">Zahájit výpůjčku</button>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="kj-btn-secondary w-full mt-2">Zpět na vozidlo</a>
+</form>
+
+{{ level_picker_script() }}
+{% endblock %}

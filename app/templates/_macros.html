@@ -53,3 +53,86 @@
     {% endfor %}
   </select>
 {% endmacro %}
+
+{# Stav nádrže / baterie. Na mobilu se procenta nepíšou z klávesnice -
+   čtyři velká tlačítka pokryjí naprostou většinu případů a políčko
+   zůstává pro toho, kdo chce přesnou hodnotu. #}
+{% macro level_picker(name, label, value=none) %}
+  <label class="kj-label">{{ label }} (%)</label>
+  <div class="flex gap-2 mb-2" data-level-group="{{ name }}">
+    {% for percent, caption in [(25, "¼"), (50, "½"), (75, "¾"), (100, "Plná")] %}
+    <button type="button" data-level-set="{{ percent }}"
+            class="flex-1 min-h-[48px] rounded-xl border border-border2 bg-white font-bold hover:bg-surface active:bg-surface">{{ caption }}</button>
+    {% endfor %}
+  </div>
+  <input class="kj-input" type="number" name="{{ name }}" min="0" max="100" inputmode="numeric"
+         value="{{ value if value is not none else '' }}" placeholder="např. 60">
+{% endmacro %}
+
+{% macro level_picker_script() %}
+<script>
+  // Tlačítka jen předvyplní číslo ve vedlejším inputu - žádný skrytý stav,
+  // takže formulář funguje i bez JS (uživatel hodnotu prostě napíše).
+  document.querySelectorAll("[data-level-group]").forEach((group) => {
+    const input = group.parentElement.querySelector("input[type=number]");
+    group.querySelectorAll("[data-level-set]").forEach((button) => {
+      button.addEventListener("click", () => { input.value = button.dataset.levelSet; });
+    });
+  });
+</script>
+{% endmacro %}
+
+{# Podezřelá hodnota (zadání 32): neblokovat, ale nechat potvrdit.
+   Checkbox posílá zpátky kód varování, service ho pak najde v
+   `confirmations` a pustí akci dál. #}
+{% macro warning_box(warnings) %}
+  {% for warning in warnings %}
+  <div class="rounded-xl bg-warning/10 border border-warning/40 px-4 py-3 mb-4">
+    <div class="flex items-start gap-2">
+      <span class="text-lg leading-none">⚠️</span>
+      <div class="min-w-0">
+        <p class="text-sm font-bold text-warning">{{ warning.message }}</p>
+        <label class="flex items-center gap-2 mt-2 cursor-pointer">
+          <input type="checkbox" name="confirm" value="{{ warning.code }}" required
+                 class="w-5 h-5 rounded border-border2 text-accent focus:ring-accent">
+          <span class="text-sm font-semibold text-subtle">Rozumím, hodnota je správná – pokračovat</span>
+        </label>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{# Návrh z OCR. Nikdy se neuloží sám - uživatel vybere, která hodnota
+   platí (zadání 25). #}
+{% macro ocr_box(suggestion, typed_value) %}
+  {% if suggestion %}
+  <div class="rounded-xl bg-info/10 border border-info/40 px-4 py-3 mb-4">
+    <p class="text-sm font-bold text-info">Z fotografie tachometru jsme přečetli jiný údaj, než jste zadali.</p>
+    <div class="grid grid-cols-2 gap-2 mt-3">
+      <label class="rounded-xl border border-border2 bg-white px-3 py-2.5 cursor-pointer">
+        <input type="radio" name="ocr_choice" value="typed" checked class="mr-2" data-ocr-value="{{ typed_value }}">
+        <span class="text-xs text-muted block">Vaše hodnota</span>
+        <span class="font-extrabold">{{ typed_value | km }} km</span>
+      </label>
+      <label class="rounded-xl border border-border2 bg-white px-3 py-2.5 cursor-pointer">
+        <input type="radio" name="ocr_choice" value="ocr" class="mr-2" data-ocr-value="{{ suggestion.value }}">
+        <span class="text-xs text-muted block">Přečteno z fotografie</span>
+        <span class="font-extrabold">{{ suggestion.value | km }} km</span>
+      </label>
+    </div>
+    <input type="hidden" name="confirm" value="ocr">
+    <p class="text-xs text-muted mt-2">Fotografie zůstane u jízdy jako doklad bez ohledu na to, kterou hodnotu vyberete.</p>
+  </div>
+  <script>
+    // Výběr přepíše číslo v hlavním poli tachometru - odesílá se pořád
+    // jedna a tatáž hodnota, žádná druhá cesta do service vrstvy.
+    document.querySelectorAll("input[name=ocr_choice]").forEach((radio) => {
+      radio.addEventListener("change", () => {
+        const target = document.querySelector("input[data-odometer-input]");
+        if (target) target.value = radio.dataset.ocrValue;
+      });
+    });
+  </script>
+  {% endif %}
+{% endmacro %}
