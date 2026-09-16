@@ -21,6 +21,8 @@ from app.core.fuel import level_label
 from app.models.core import User
 from app.models.fleet import TRIP_PURPOSES, Trip, TripDriver, TripNote, Vehicle
 from app.modules.notifications import service as notifications
+from app.modules.reservations import repository as reservations_repository
+from app.modules.reservations import service as reservations_service
 from app.modules.trips import repository
 from app.modules.vehicles import service as vehicles_service
 
@@ -69,6 +71,23 @@ async def start_trip(
     _check_start_odometer(vehicle, start_odometer_km)
     _check_fuel_level(vehicle, start_fuel_level)
 
+    # Zadání 10: cizí rezervace výpůjčku NEBLOKUJE, ale musí se zobrazit a
+    # potvrdit. Vlastní rezervace se naopak tiše naplní.
+    now = datetime.now(timezone.utc)
+    covering = await reservations_repository.find_covering(db, vehicle_id=vehicle.id, moment=now)
+    own_reservation = None
+    conflicting = None
+    if covering is not None:
+        if covering.kind == "reservation" and covering.user_id == actor.id:
+            own_reservation = covering
+        elif "reservation" not in confirmations:
+            raise TripWarning(
+                "reservation",
+                f"Vozidlo je v tomto termínu rezervováno: {reservations_service.describe(covering)}.",
+            )
+        else:
+            conflicting = covering
+
     trip = Trip(
         vehicle_id=vehicle.id,
         primary_driver_id=actor.id,
@@ -77,9 +96,17 @@ async def start_trip(
         start_odometer_km=start_odometer_km,
         start_fuel_level=start_fuel_level,
         status="active",
+        reservation_id=own_reservation.id if own_reservation else None,
+        # Potvrzení přejezdu cizí rezervace zůstává v historii jízdy
+        # (zadání 10: „Potvrzení uložit do historie").
+        reservation_conflict_id=conflicting.id if conflicting else None,
+        reservation_override_at=now if conflicting else None,
     )
     db.add(trip)
     await db.flush()
+
+    if own_reservation is not None:
+        await reservations_service.mark_fulfilled(db, own_reservation)
 
     # Fotka tachometru je důkazní podklad k té jízdě - zapisuje se ve
     # stejné transakci, aby nemohla vzniknout jízda bez ní ani fotka bez
@@ -98,6 +125,8 @@ async def start_trip(
         after_data={
             "vehicle_id": str(vehicle.id), "start_odometer_km": start_odometer_km,
             "start_fuel_level": start_fuel_level, "confirmations": sorted(confirmations),
+            "reservation_id": str(own_reservation.id) if own_reservation else None,
+            "reservation_conflict_id": str(conflicting.id) if conflicting else None,
         },
     )
     await db.commit()

@@ -219,3 +219,66 @@ ostatní — kvůli databázovému pravidlu „nejvýše jedna aktivní jízda n
 vozidlo" (R4). Musí existovat někdo, kdo ji umí zavřít, aniž by se
 čekalo na administrátora. Kdo jízdu skutečně uzavřel, zůstává v
 `ended_by`.
+
+---
+
+## R15 — Porušení EXCLUDE constraintu se odchytává savepointem, ne rollbackem
+
+**Rozhodnutí.** `reservations/service.py` obaluje `flush()` do
+`async with db.begin_nested()`. Po `IntegrityError` se **nevolá**
+`await db.rollback()`.
+
+**Proč.** Rollback celé transakce expiruje každý objekt v session.
+Formulář se pak vykresluje znovu a první přístup k `user.full_name`
+nebo `vehicle.license_plate` by se pokusil data dotáhnout — jenže
+expirovaný atribut se načítá synchronně, takže na async session spadne
+na `MissingGreenlet`. Savepoint zahodí jen neúspěšný INSERT a session
+nechá plně použitelnou.
+
+**Pozor u úprav.** Savepoint vrátí databázi, ale objekt v paměti si nové
+hodnoty drží dál. Bez `db.expire(reservation)` by je autoflush při
+vykreslení formuláře zapsal znovu a spadl na tomtéž constraintu — proto
+tam ten `expire` je.
+
+---
+
+## R16 — Kalendář je postavený od volna, ne od obsazenosti
+
+**Rozhodnutí.** `reservations/calendar.py` staví mřížku vozidlo × den,
+kde výchozí stav buňky je „volno" a teprve rezervace, servisní blok
+nebo probíhající jízda ji přebarví. Řádek dostane **každé** aktivní
+vozidlo, i to bez jediné rezervace.
+
+**Proč.** Zadání 9 chce, aby byl volný termín zřejmý na první pohled.
+Kdyby se vykreslovaly jen existující rezervace, prázdno by znamenalo
+„nevíme" místo „je volno" a vozidlo bez rezervací by na kalendáři
+chybělo úplně.
+
+**Přednost při souběhu.** Když na jeden den padne víc věcí, vyhrává
+probíhající jízda před servisem a ten před rezervací: jízda je fakt,
+rezervace jen nárok. V popisku buňky zůstává obojí.
+
+**Časové pásmo.** Data jsou v databázi v UTC, ale den v kalendáři začíná
+v `Europe/Prague` — jinak by rezervace od 23:00 padla na špatný den.
+Proto je mezi závislostmi `tzdata` (Windows ani slim image vlastní
+databázi pásem nemají).
+
+---
+
+## R17 — Cizí rezervaci lze přejet, vlastní se naplní
+
+**Rozhodnutí.** Při zahájení výpůjčky se hledá aktivní rezervace
+pokrývající „teď":
+
+- je **moje** → jízda se na ni naváže (`Trip.reservation_id`) a
+  rezervace přejde do stavu `fulfilled`, bez jediného dotazu navíc;
+- je **cizí** (nebo servisní blok) → `TripWarning` se jménem, začátkem
+  a koncem. Po potvrzení se do jízdy uloží `reservation_conflict_id` a
+  `reservation_override_at`.
+
+**Proč.** Zadání 10 výslovně zakazuje výpůjčku automaticky blokovat,
+ale žádá viditelné upozornění a uložení potvrzení do historie.
+
+**Co se nestane.** Přejetá cizí rezervace **zůstává aktivní**. Ten,
+kdo si vozidlo zamluvil, o svůj záznam nepřijde jen proto, že mu ho
+někdo vzal — jinak by z kalendáře zmizela stopa po tom, co se stalo.

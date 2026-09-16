@@ -27,6 +27,9 @@ MESSAGES: dict[str, str] = {
     "driver_added": "Další řidič byl přidán.",
     "driver_removed": "Řidič byl od jízdy odebrán.",
     "note_added": "Poznámka byla přidána.",
+    "reservation_created": "Rezervace byla vytvořena.",
+    "reservation_updated": "Rezervace byla upravena.",
+    "reservation_cancelled": "Rezervace byla zrušena.",
 }
 
 

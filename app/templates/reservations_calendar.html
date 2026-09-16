@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Kalendář rezervací &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div>
+    <h1 class="text-2xl font-extrabold tracking-tight">Kalendář</h1>
+    <p class="text-muted2">Týden od {{ days[0] | d }} do {{ days[-1] | d }}</p>
+  </div>
+  {% if can_create %}
+  <a href="/kniha-jizd/reservations/new" class="kj-btn shrink-0">+ Rezervovat</a>
+  {% endif %}
+</div>
+
+<div class="flex items-center justify-between gap-2 mb-4">
+  <a href="/kniha-jizd/reservations?week={{ prev_week }}" class="kj-btn-secondary !min-h-[40px] !px-4">&larr; Předchozí</a>
+  <a href="/kniha-jizd/reservations?week={{ this_week }}" class="text-sm font-bold text-accent hover:underline">Dnešní týden</a>
+  <a href="/kniha-jizd/reservations?week={{ next_week }}" class="kj-btn-secondary !min-h-[40px] !px-4">Další &rarr;</a>
+</div>
+
+{# Legenda musí být nad mřížkou - bez ní jsou barvy hádanka. #}
+<div class="flex flex-wrap gap-3 mb-3 text-xs font-bold">
+  <span class="flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-success/25 border border-success/40"></span> Volné</span>
+  <span class="flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-accent/80"></span> Rezervováno</span>
+  <span class="flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-ink"></span> Právě jede</span>
+  <span class="flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-warning/80"></span> Servis / mimo provoz</span>
+</div>
+
+{% if not rows %}
+<div class="kj-card text-center text-muted2">Není založené žádné aktivní vozidlo.</div>
+{% else %}
+{# Mřížka vozidlo × den. Na mobilu se roluje do strany, sloupec s vozidlem
+   zůstává přilepený vlevo - jinak by se nedalo poznat, čí je který řádek. #}
+<div class="kj-card !p-0 overflow-x-auto">
+  <table class="w-full border-collapse min-w-[560px]">
+    <thead>
+      <tr class="bg-surface">
+        <th class="kj-th sticky left-0 bg-surface z-10 min-w-[120px]">Vozidlo</th>
+        {% for day in days %}
+        <th class="kj-th text-center {% if day.isoformat() == this_week %}text-accent{% endif %}">
+          <div>{{ day_names[loop.index0] }}</div>
+          <div class="text-[11px] font-semibold text-muted">{{ day.strftime("%d.%m.") }}</div>
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="kj-td sticky left-0 bg-white z-10">
+          <a href="/kniha-jizd/vehicles/{{ row.vehicle.id }}" class="block hover:text-accent">
+            <div class="font-bold text-sm">{{ row.vehicle.license_plate }}</div>
+            <div class="text-[11px] text-muted2 truncate">{{ row.vehicle.brand }} {{ row.vehicle.model }}</div>
+          </a>
+        </td>
+        {% for cell in row.cells %}
+        {% set styles = {
+          "free": "bg-success/15 hover:bg-success/25 border-success/30",
+          "reserved": "bg-accent/80 text-white border-accent",
+          "trip": "bg-ink text-white border-ink",
+          "service": "bg-warning/80 text-white border-warning",
+        } %}
+        <td class="p-1 border-t border-divider-soft">
+          {% if cell.is_free and can_create and not cell.is_past %}
+          <a href="/kniha-jizd/reservations/new?vehicle={{ row.vehicle.id }}&day={{ cell.day.isoformat() }}"
+             title="Volné – kliknutím rezervovat"
+             class="flex items-center justify-center h-11 rounded-lg border text-[11px] font-bold transition-colors {{ styles['free'] }} {% if cell.is_today %}ring-2 ring-accent{% endif %}">
+            volné
+          </a>
+          {% else %}
+          <div title="{{ cell.tooltip }}"
+               class="flex items-center justify-center h-11 rounded-lg border text-[11px] font-bold px-1 text-center leading-tight
+                      {{ styles.get(cell.level, styles['free']) }}
+                      {% if cell.is_past %}opacity-40{% endif %}
+                      {% if cell.is_today %}ring-2 ring-accent{% endif %}">
+            {% if cell.level == "reserved" %}rezerv.
+            {% elif cell.level == "trip" %}jede
+            {% elif cell.level == "service" %}servis
+            {% else %}volné{% endif %}
+          </div>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mt-6 mb-2">Rezervace v tomto týdnu</h2>
+{% if reservations %}
+<div class="grid gap-2">
+  {% for reservation in reservations %}
+  <a href="/kniha-jizd/reservations/{{ reservation.id }}"
+     class="kj-card !p-4 block hover:bg-surface {% if reservation.kind == 'service' %}border-l-4 !border-l-warning{% endif %}">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="font-bold">{{ reservation.vehicle.license_plate }}</div>
+        <div class="text-sm text-subtle">
+          {{ reservation.user.full_name if reservation.user else "Servis / mimo provoz" }}
+        </div>
+        {% if reservation.purpose %}<div class="text-xs text-muted2 truncate">{{ reservation.purpose }}</div>{% endif %}
+      </div>
+      <div class="text-right text-xs text-muted2 shrink-0">
+        <div>{{ reservation.start_at | dt }}</div>
+        <div>&darr;</div>
+        <div>{{ reservation.end_at | dt }}</div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="kj-card text-sm text-muted2">V tomto týdnu nejsou žádné rezervace – všechna vozidla jsou volná.</div>
+{% endif %}
+{% endblock %}

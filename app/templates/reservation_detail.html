@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Rezervace {{ reservation.vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <div class="flex items-center gap-2 flex-wrap">
+      <h1 class="text-2xl font-extrabold tracking-tight">{{ reservation.vehicle.license_plate }}</h1>
+      {% if reservation.status == "active" and reservation.is_expired %}
+      <span class="kj-badge bg-muted/15 text-muted2">Proběhlá</span>
+      {% elif reservation.status == "active" and reservation.is_current %}
+      <span class="kj-badge bg-accent/15 text-accent">Právě probíhá</span>
+      {% else %}
+      <span class="kj-badge {% if reservation.status == 'cancelled' %}bg-muted/15 text-muted2{% elif reservation.status == 'fulfilled' %}bg-success/15 text-success{% else %}bg-info/15 text-info{% endif %}">
+        {{ labels.RESERVATION_STATUS.get(reservation.status, reservation.status) }}
+      </span>
+      {% endif %}
+      {% if reservation.kind == "service" %}
+      <span class="kj-badge bg-warning/15 text-warning">Servis / mimo provoz</span>
+      {% endif %}
+    </div>
+    <p class="text-muted2">{{ reservation.vehicle.brand }} {{ reservation.vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/reservations" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Kalendář</a>
+</div>
+
+<div class="kj-card mb-4">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Od</div>
+      <div class="text-sm font-semibold mt-1">{{ reservation.start_at | dt }}</div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Do</div>
+      <div class="text-sm font-semibold mt-1">{{ reservation.end_at | dt }}</div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Rezervoval</div>
+      <div class="text-sm font-semibold mt-1">{{ reservation.user.full_name if reservation.user else "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Očekávané km</div>
+      <div class="text-sm font-semibold mt-1">{{ reservation.expected_km | km if reservation.expected_km else "—" }}</div>
+    </div>
+  </div>
+
+  {% if reservation.purpose or reservation.expected_route or reservation.note %}
+  <div class="mt-4 pt-4 border-t border-divider-soft grid sm:grid-cols-2 gap-4 text-sm">
+    {% if reservation.purpose %}
+    <div><div class="text-xs text-muted">Účel</div><div class="font-semibold">{{ reservation.purpose }}</div></div>
+    {% endif %}
+    {% if reservation.expected_route %}
+    <div><div class="text-xs text-muted">Předpokládaná trasa</div><div class="font-semibold">{{ reservation.expected_route }}</div></div>
+    {% endif %}
+    {% if reservation.note %}
+    <div class="sm:col-span-2"><div class="text-xs text-muted">Poznámka</div><p class="whitespace-pre-line">{{ reservation.note }}</p></div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if reservation.status == "active" and not reservation.is_expired %}
+<a href="/kniha-jizd/vehicles/{{ reservation.vehicle_id }}" class="kj-btn-hero mb-4">Otevřít vozidlo a zahájit výpůjčku</a>
+{% endif %}
+
+{% if can_manage and reservation.status == "active" %}
+<div class="kj-card">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Správa rezervace</h2>
+  <a href="/kniha-jizd/reservations/{{ reservation.id }}/edit" class="kj-btn-secondary">Upravit termín</a>
+
+  <form method="post" action="/kniha-jizd/reservations/{{ reservation.id }}/cancel"
+        class="flex flex-wrap items-end gap-2 mt-4 pt-4 border-t border-divider-soft">
+    {{ csrf_field(request) }}
+    <div class="grow min-w-[220px]">
+      <label class="kj-label mt-0">Důvod zrušení (nepovinné)</label>
+      <input class="kj-input" name="reason" maxlength="255">
+    </div>
+    <button type="submit" class="kj-btn-danger">Zrušit rezervaci</button>
+  </form>
+  <p class="text-xs text-muted mt-2">Zrušením se termín okamžitě uvolní pro ostatní. Záznam zůstane v historii.</p>
+</div>
+{% endif %}
+{% endblock %}

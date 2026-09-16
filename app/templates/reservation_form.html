@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ "Nová rezervace" if not reservation else "Úprava rezervace" }} &ndash; Kniha jízd{% endblock %}
+
+{% macro value_of(name, fallback=none) %}{% if form.get(name) is not none %}{{ form.get(name) }}{% elif fallback is not none %}{{ fallback }}{% endif %}{% endmacro %}
+
+{# datetime-local chce přesně "YYYY-MM-DDTHH:MM" #}
+{% macro local_dt(value) %}{% if value %}{{ value.strftime("%Y-%m-%dT%H:%M") }}{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">{{ "Nová rezervace" if not reservation else "Úprava rezervace" }}</h1>
+  <a href="{{ '/kniha-jizd/reservations' if not reservation else '/kniha-jizd/reservations/' ~ reservation.id }}"
+     class="text-sm text-muted hover:text-ink">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-5 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{{ '/kniha-jizd/reservations/new' if not reservation else '/kniha-jizd/reservations/' ~ reservation.id ~ '/edit' }}">
+  {{ csrf_field(request) }}
+
+  <div class="kj-card mb-4">
+    {% if not reservation %}
+    <label class="kj-label mt-0">Vozidlo <span class="text-danger">*</span></label>
+    {% set chosen_vehicle = form.get('vehicle_id') %}
+    <select class="kj-input" name="vehicle_id" required>
+      <option value="">— vyberte vozidlo —</option>
+      {% for vehicle in vehicles %}
+      <option value="{{ vehicle.id }}" {% if chosen_vehicle and vehicle.id|string == chosen_vehicle|string %}selected{% endif %}>
+        {{ vehicle.license_plate }} – {{ vehicle.brand }} {{ vehicle.model }}
+      </option>
+      {% endfor %}
+    </select>
+    {% else %}
+    <div class="text-xs text-muted">Vozidlo</div>
+    <div class="font-bold">{{ reservation.vehicle.license_plate }} – {{ reservation.vehicle.brand }} {{ reservation.vehicle.model }}</div>
+    <p class="text-xs text-muted mt-1">Vozidlo se u existující rezervace nemění – zrušte ji a založte novou.</p>
+    {% endif %}
+
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Od <span class="text-danger">*</span></label>
+        <input class="kj-input" type="datetime-local" name="start_at" required
+               value="{{ value_of('start_at', none) or local_dt(reservation.start_at if reservation) }}">
+      </div>
+      <div>
+        <label class="kj-label">Do <span class="text-danger">*</span></label>
+        <input class="kj-input" type="datetime-local" name="end_at" required
+               value="{{ value_of('end_at', none) or local_dt(reservation.end_at if reservation) }}">
+      </div>
+    </div>
+
+    <label class="kj-label">Účel / poznámka k rezervaci</label>
+    <input class="kj-input" name="purpose" maxlength="255"
+           value="{{ value_of('purpose', reservation.purpose if reservation) }}"
+           placeholder="např. montáž Zlatá Olešnice">
+
+    {% if can_create_service and not reservation %}
+    <label class="flex items-center gap-2 mt-4 cursor-pointer">
+      <input type="checkbox" name="kind" value="service" class="w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
+             {% if form.get('kind') == 'service' %}checked{% endif %}>
+      <span class="text-sm font-semibold">Servis / mimo provoz (blokace bez majitele, ne rezervace)</span>
+    </label>
+    {% endif %}
+  </div>
+
+  <details class="kj-card mb-4" {% if form.get('expected_route') or (reservation and reservation.expected_route) %}open{% endif %}>
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Nepovinné údaje</summary>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Předpokládaná trasa</label>
+        <input class="kj-input" name="expected_route"
+               value="{{ value_of('expected_route', reservation.expected_route if reservation) }}">
+      </div>
+      <div>
+        <label class="kj-label">Očekávaný počet km</label>
+        <input class="kj-input" type="number" min="0" name="expected_km"
+               value="{{ value_of('expected_km', reservation.expected_km if reservation) }}">
+      </div>
+    </div>
+    <label class="kj-label">Poznámka</label>
+    <textarea class="kj-input" name="note" rows="2">{{ value_of('note', reservation.note if reservation) }}</textarea>
+  </details>
+
+  <div class="flex gap-2">
+    <button type="submit" class="kj-btn">{{ "Rezervovat" if not reservation else "Uložit změny" }}</button>
+    <a href="{{ '/kniha-jizd/reservations' if not reservation else '/kniha-jizd/reservations/' ~ reservation.id }}"
+       class="kj-btn-secondary">Zrušit</a>
+  </div>
+</form>
+{% endblock %}
