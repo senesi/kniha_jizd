@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Načíst QR &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-extrabold tracking-tight mb-1">Načíst QR kód vozidla</h1>
+<p class="text-muted2 mb-5">Namiřte fotoaparát na štítek na vozidle.</p>
+
+{# Čtečka běží celá v prohlížeči - snímek se nikam neodesílá. Kamera
+   vyžaduje HTTPS (na produkci je), lokálně přes http funguje jen na
+   localhost; proto je tu vždy i ruční záloha níž. #}
+<div class="kj-card mb-4">
+  <video id="preview" class="w-full rounded-xl bg-ink aspect-square object-cover" playsinline muted></video>
+  <p id="scan-status" class="text-sm text-muted2 mt-3">Spouštím fotoaparát…</p>
+  <button id="start" class="kj-btn w-full mt-3 hidden">Spustit fotoaparát</button>
+</div>
+
+<div class="kj-card">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Nejde načíst?</h2>
+  <p class="text-sm text-muted2 mb-3">Vyberte vozidlo ze seznamu ručně.</p>
+  <a href="/kniha-jizd/vehicles" class="kj-btn-secondary w-full">Seznam vozidel</a>
+</div>
+
+<script type="module">
+  import QrScanner from "/kniha-jizd/static/vendor/qr-scanner/qr-scanner.min.js";
+
+  const video = document.getElementById("preview");
+  const statusText = document.getElementById("scan-status");
+  const startButton = document.getElementById("start");
+  let scanner = null;
+
+  // Přijímáme jen odkaz na TUHLE aplikaci. Cizí QR kód (reklama, jízdenka)
+  // nesmí uživatele odnikud odnavigovat - bereme z něj jen cestu, nikdy
+  // cizí doménu.
+  function targetPath(raw) {
+    try {
+      const url = new URL(raw, window.location.origin);
+      if (url.origin !== window.location.origin) return null;
+      return url.pathname.startsWith("/kniha-jizd/v/") ? url.pathname : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function start() {
+    try {
+      scanner = new QrScanner(video, (result) => {
+        const path = targetPath(result.data ?? result);
+        if (!path) {
+          statusText.textContent = "Tohle není QR kód vozidla z Knihy jízd.";
+          return;
+        }
+        scanner.stop();
+        statusText.textContent = "Vozidlo nalezeno, otevírám…";
+        window.location.href = path;
+      }, { highlightScanRegion: true, highlightCodeOutline: true });
+      await scanner.start();
+      statusText.textContent = "Namiřte na QR kód.";
+      startButton.classList.add("hidden");
+    } catch (error) {
+      statusText.textContent = "Fotoaparát se nepodařilo spustit: " + error.message;
+      startButton.classList.remove("hidden");
+    }
+  }
+
+  startButton.addEventListener("click", start);
+  start();
+</script>
+{% endblock %}

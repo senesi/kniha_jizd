@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% from "_macros.html" import deadline_row, status_badge %}
+{% block title %}{{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+{# Pořadí sekcí = pořadí, ve kterém to řidič u auta potřebuje (zadání 7):
+   co je to za vozidlo, v jakém je stavu, jaké má termíny, jestli na něm
+   něco není. Administrativa až pod tím. #}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <div class="flex items-center gap-2 flex-wrap">
+      <h1 class="text-2xl font-extrabold tracking-tight">{{ vehicle.license_plate }}</h1>
+      {{ status_badge(vehicle) }}
+    </div>
+    <p class="text-muted2">{{ vehicle.internal_code }} &middot; {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.year_of_manufacture %} ({{ vehicle.year_of_manufacture }}){% endif %}</p>
+  </div>
+  <a href="/kniha-jizd/vehicles" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+<!-- Aktuální stav -->
+<div class="kj-card mb-4">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Stav tachometru</div>
+      <div class="text-xl font-extrabold">{{ vehicle.current_odometer_km | km }} <span class="text-sm font-bold text-muted2">km</span></div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">{{ fuel.level_label(vehicle.fuel_type) }}</div>
+      <div class="text-xl font-extrabold">
+        {% if vehicle.current_fuel_level is not none %}{{ vehicle.current_fuel_level }} <span class="text-sm font-bold text-muted2">%</span>{% else %}<span class="text-muted">—</span>{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Odpovědná osoba</div>
+      <div class="text-sm font-semibold mt-1">{{ vehicle.responsible_user.full_name if vehicle.responsible_user else "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Poslední aktualizace</div>
+      <div class="text-sm font-semibold mt-1">{{ vehicle.state_updated_at | dt }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Povinné termíny -->
+<div class="mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Povinné termíny</h2>
+  <div class="grid sm:grid-cols-2 gap-2">
+    {% for status in deadlines %}{{ deadline_row(status) }}{% endfor %}
+  </div>
+</div>
+
+<!-- Pojištění: čísla, která řidič potřebuje při nehodě po ruce -->
+{% if vehicle.insurance_company or vehicle.insurance_policy_number %}
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Pojištění</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+    <div>
+      <div class="text-xs text-muted">Pojišťovna</div>
+      <div class="font-semibold">{{ vehicle.insurance_company or "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Číslo pojistky</div>
+      <div class="font-semibold select-all">{{ vehicle.insurance_policy_number or "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Platnost do</div>
+      <div class="font-semibold">{{ vehicle.insurance_valid_until | d }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Technické údaje -->
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Vozidlo</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+    <div><div class="text-xs text-muted">VIN</div><div class="font-semibold break-all">{{ vehicle.vin or "—" }}</div></div>
+    <div><div class="text-xs text-muted">Typ</div><div class="font-semibold">{{ labels.VEHICLE_TYPE.get(vehicle.vehicle_type, vehicle.vehicle_type) }}</div></div>
+    <div><div class="text-xs text-muted">Palivo</div><div class="font-semibold">{{ labels.FUEL_TYPE.get(vehicle.fuel_type, vehicle.fuel_type or "—") }}</div></div>
+    <div>
+      <div class="text-xs text-muted">{% if fuel.is_electric(vehicle.fuel_type) %}Kapacita baterie{% else %}Objem nádrže{% endif %}</div>
+      <div class="font-semibold">
+        {% set capacity, unit = fuel.capacity_for(vehicle) %}
+        {% if capacity %}{{ capacity | liters }} {{ unit }}{% else %}—{% endif %}
+      </div>
+    </div>
+  </div>
+  {% if vehicle.notes %}
+  <div class="mt-4 pt-4 border-t border-divider-soft">
+    <div class="text-xs text-muted mb-1">Poznámka</div>
+    <p class="text-sm whitespace-pre-line">{{ vehicle.notes }}</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Fotografie -->
+<div class="kj-card mb-4">
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Fotografie</h2>
+    {% if can_manage %}
+    <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/photos" enctype="multipart/form-data" class="flex items-center gap-2">
+      {{ csrf_field(request) }}
+      <input type="file" name="photo" accept="image/*" required
+             class="text-xs file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-surface file:text-subtle file:font-bold">
+      <button type="submit" class="kj-btn-secondary !min-h-[36px] !px-3 !text-sm">Nahrát</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if vehicle.photos %}
+  <div class="grid grid-cols-3 sm:grid-cols-5 gap-2">
+    {% for photo in vehicle.photos %}
+    <div class="relative group">
+      <a href="/kniha-jizd/attachments/{{ photo.id }}/full" target="_blank">
+        <img src="/kniha-jizd/attachments/{{ photo.id }}/thumb" alt="{{ photo.original_filename }}"
+             class="w-full aspect-square object-cover rounded-xl border border-divider-soft">
+      </a>
+      {% if can_manage %}
+      <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/photos/{{ photo.id }}/delete"
+            class="absolute top-1 right-1">
+        {{ csrf_field(request) }}
+        <button type="submit" title="Odstranit fotografii"
+                class="w-7 h-7 rounded-full bg-white/90 text-danger text-sm font-bold shadow">&times;</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-muted">Žádné fotografie.</p>
+  {% endif %}
+</div>
+
+{% if can_manage %}
+<!-- Správa vozidla -->
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Správa vozidla</h2>
+  <div class="flex flex-wrap gap-2">
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/edit" class="kj-btn-secondary">Upravit údaje</a>
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/qr" class="kj-btn-secondary">QR kód &amp; štítek</a>
+  </div>
+
+  <details class="mt-4 pt-4 border-t border-divider-soft">
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Administrativní oprava tachometru</summary>
+    <p class="text-xs text-muted mt-2">
+      Běžná jízda stav km nikdy nesnižuje. Tady je to možné, ale vždy s důvodem
+      a s trvalým záznamem v auditu (kdo, kdy, z jaké hodnoty na jakou).
+    </p>
+    <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/odometer" class="mt-2">
+      {{ csrf_field(request) }}
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label class="kj-label mt-0">Nový stav km</label>
+          <input class="kj-input" type="number" name="new_km" min="0" value="{{ vehicle.current_odometer_km }}" required>
+        </div>
+        <div>
+          <label class="kj-label mt-0">Důvod opravy</label>
+          <input class="kj-input" type="text" name="reason" required placeholder="např. překlep při zadání, výměna tachometru">
+        </div>
+      </div>
+      <button type="submit" class="kj-btn-danger mt-3">Opravit stav tachometru</button>
+    </form>
+  </details>
+
+  {% if assignments %}
+  <details class="mt-3 pt-3 border-t border-divider-soft">
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Historie odpovědných osob</summary>
+    <ul class="mt-2 text-sm space-y-1">
+      {% for assignment in assignments %}
+      <li class="flex justify-between gap-3 border-b border-divider-soft py-1">
+        <span class="font-semibold">{{ assignment.user.full_name if assignment.user else "—" }}</span>
+        <span class="text-muted2">{{ assignment.valid_from | d }} &ndash; {{ assignment.valid_to | d if assignment.valid_to else "dosud" }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

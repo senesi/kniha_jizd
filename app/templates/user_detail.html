@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ target.full_name }} &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-5">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">{{ target.full_name }}</h1>
+    <p class="text-muted2 break-all">{{ target.email }}</p>
+  </div>
+  <a href="/kniha-jizd/users" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+<div class="kj-card mb-4">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+    <div><div class="text-xs text-muted">Telefon</div><div class="font-semibold">{{ target.phone or "—" }}</div></div>
+    <div><div class="text-xs text-muted">Stav</div><div class="font-semibold">{{ "Aktivní" if target.is_active else "Neaktivní" }}</div></div>
+    <div><div class="text-xs text-muted">Založen</div><div class="font-semibold">{{ target.created_at | d }}</div></div>
+    <div><div class="text-xs text-muted">Poslední přihlášení</div><div class="font-semibold">{{ target.last_login_at | dt }}</div></div>
+  </div>
+  <div class="mt-4 pt-4 border-t border-divider-soft">
+    <div class="text-xs text-muted mb-1">Role</div>
+    <div class="flex flex-wrap gap-1">
+      {% for assignment in target.roles %}
+      <span class="kj-badge bg-surface text-subtle border border-divider">{{ labels.ROLE.get(assignment.role.name, assignment.role.name) }}</span>
+      {% else %}
+      <span class="text-sm text-muted">Bez role</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="kj-card">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Správa</h2>
+  <a href="/kniha-jizd/users/{{ target.id }}/edit" class="kj-btn-secondary">Upravit uživatele</a>
+
+  <details class="mt-4 pt-4 border-t border-divider-soft">
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Nastavit nové heslo</summary>
+    <p class="text-xs text-muted mt-2">Heslo se změní okamžitě. Akce se zapisuje do auditu.</p>
+    <form method="post" action="/kniha-jizd/users/{{ target.id }}/password" class="mt-2 flex flex-wrap items-end gap-2">
+      {{ csrf_field(request) }}
+      <div class="grow min-w-[220px]">
+        <label class="kj-label mt-0">Nové heslo</label>
+        <input class="kj-input" type="password" name="new_password" required minlength="8" autocomplete="new-password">
+      </div>
+      <button type="submit" class="kj-btn-danger">Nastavit heslo</button>
+    </form>
+  </details>
+</div>
+{% endblock %}

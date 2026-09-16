@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+*.egg-info/
+.pytest_cache/
+_local_data/
+
+# Local E2E scratch files (cookies, headers, HTML) - never commit
+.tmp/
+
+# Log lokálně spuštěného uvicornu (nikdy do Gitu)
+.tmp_server.log

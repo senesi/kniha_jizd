@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Přihlášení &ndash; Kniha jízd</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/kniha-jizd/static/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/kniha-jizd/static/favicon-180.png">
+  {% include "_theme.html" %}
+</head>
+<body class="min-h-screen bg-ink flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <div class="flex items-center justify-center gap-2 mb-6 text-white">
+      <span class="text-xl font-bold tracking-tight">🚗 Kniha jízd</span>
+    </div>
+    <form method="post" action="/kniha-jizd/login" class="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
+      <h1 class="text-lg font-semibold text-ink mb-1">Přihlášení</h1>
+      <p class="text-sm text-muted mb-4">Zadejte přihlašovací údaje</p>
+      {% if error %}
+      <div class="rounded-lg bg-danger/10 text-danger text-sm px-3 py-2 mb-4 border border-danger/30">{{ error }}</div>
+      {% endif %}
+      {% if next %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="rounded-lg bg-info/10 text-info text-sm px-3 py-2 mb-4 border border-info/30">
+        Po přihlášení budete přesměrováni na načtené vozidlo.
+      </div>
+      {% endif %}
+      <label class="kj-label mt-0">E-mail</label>
+      <input class="kj-input" type="email" name="email" required autofocus autocomplete="username">
+      <label class="kj-label">Heslo</label>
+      <input class="kj-input" type="password" name="password" required autocomplete="current-password">
+      <button type="submit" class="kj-btn w-full mt-6">Přihlásit se</button>
+    </form>
+  </div>
+</body>
+</html>

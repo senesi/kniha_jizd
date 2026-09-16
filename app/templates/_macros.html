@@ -1,0 +1,55 @@
+{# Opakující se kousky UI. Semafor je tu proto, že se objevuje na kartě
+   vozidla, v seznamu i na dashboardu - a musí všude znamenat totéž. #}
+
+{% macro dot(level) %}
+  {% set colors = {"green": "bg-success", "orange": "bg-warning", "red": "bg-danger", "unknown": "bg-muted"} %}
+  <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0 {{ colors.get(level, 'bg-muted') }}"></span>
+{% endmacro %}
+
+{% macro deadline_row(status) %}
+  {% set styles = {
+    "green": "bg-success/10 border-success/25 text-success",
+    "orange": "bg-warning/10 border-warning/30 text-warning",
+    "red": "bg-danger/10 border-danger/30 text-danger",
+    "unknown": "bg-surface border-divider text-muted2",
+  } %}
+  <div class="flex items-start gap-3 rounded-xl border px-3 py-2.5 {{ styles.get(status.level, styles['unknown']) }}">
+    {{ dot(status.level) }}
+    <div class="min-w-0">
+      <div class="text-sm font-bold leading-tight">{{ status.label }}</div>
+      <div class="text-xs opacity-90">{{ status.detail }}</div>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro status_badge(vehicle) %}
+  {% if not vehicle.is_active %}
+    <span class="kj-badge bg-muted/15 text-muted2">Neaktivní</span>
+  {% elif vehicle.status == "in_service" %}
+    <span class="kj-badge bg-warning/15 text-warning">V servisu</span>
+  {% elif vehicle.status == "blocked" %}
+    <span class="kj-badge bg-danger/15 text-danger">Mimo provoz</span>
+  {% else %}
+    <span class="kj-badge bg-success/15 text-success">K dispozici</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro field(label, name, value="", type="text", required=false, placeholder="", step="", hint="") %}
+  <label class="kj-label">{{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}</label>
+  <input class="kj-input" type="{{ type }}" name="{{ name }}"
+         value="{{ value if value is not none else '' }}"
+         {% if required %}required{% endif %}
+         {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+         {% if step %}step="{{ step }}"{% endif %}>
+  {% if hint %}<p class="text-xs text-muted mt-1">{{ hint }}</p>{% endif %}
+{% endmacro %}
+
+{% macro select(label, name, options, selected, labels, blank="") %}
+  <label class="kj-label">{{ label }}</label>
+  <select class="kj-input" name="{{ name }}">
+    {% if blank %}<option value="">{{ blank }}</option>{% endif %}
+    {% for option in options %}
+    <option value="{{ option }}" {% if option == selected %}selected{% endif %}>{{ labels.get(option, option) }}</option>
+    {% endfor %}
+  </select>
+{% endmacro %}

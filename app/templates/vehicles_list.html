@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "_macros.html" import dot, status_badge %}
+{% block title %}Vozidla &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">Vozidla</h1>
+  {% if can_create %}
+  <a href="/kniha-jizd/vehicles/new" class="kj-btn">+ Nové vozidlo</a>
+  {% endif %}
+</div>
+
+<div class="flex gap-2 mb-5">
+  <a href="/kniha-jizd/vehicles" class="kj-badge px-4 py-2 {% if only != 'mine' %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">Všechna</a>
+  <a href="/kniha-jizd/vehicles?only=mine" class="kj-badge px-4 py-2 {% if only == 'mine' %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">Moje zodpovědnost</a>
+</div>
+
+{% if not rows %}
+<div class="kj-card text-center text-muted2">
+  {% if only == "mine" %}Nejste odpovědnou osobou žádného vozidla.{% else %}Zatím není založeno žádné vozidlo.{% endif %}
+</div>
+{% endif %}
+
+{# Mobil: karty. Desktop: tabulka. Stejná data, jiná hustota (zadání 28/29). #}
+<div class="grid gap-3 lg:hidden">
+  {% for row in rows %}
+  <a href="/kniha-jizd/vehicles/{{ row.vehicle.id }}" class="kj-card block active:bg-surface">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          {{ dot(row.worst) }}
+          <span class="font-extrabold truncate">{{ row.vehicle.license_plate }}</span>
+        </div>
+        <div class="text-sm text-muted2 truncate">{{ row.vehicle.internal_code }} &middot; {{ row.vehicle.brand }} {{ row.vehicle.model }}</div>
+      </div>
+      {{ status_badge(row.vehicle) }}
+    </div>
+    <div class="mt-3 flex items-center gap-4 text-sm text-subtle">
+      <span><span class="text-muted">Tachometr:</span> <strong>{{ row.vehicle.current_odometer_km | km }} km</strong></span>
+      {% if row.vehicle.current_fuel_level is not none %}
+      <span><span class="text-muted">{{ fuel.level_label(row.vehicle.fuel_type) }}:</span> <strong>{{ row.vehicle.current_fuel_level }} %</strong></span>
+      {% endif %}
+    </div>
+    {% set actionable = row.deadlines | selectattr("is_actionable") | list %}
+    {% if actionable %}
+    <div class="mt-3 flex flex-wrap gap-1.5">
+      {% for status in actionable %}
+      <span class="kj-badge {% if status.level == 'red' %}bg-danger/15 text-danger{% else %}bg-warning/15 text-warning{% endif %}">{{ status.label }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="hidden lg:block">
+  {% if rows %}
+  <div class="kj-card !p-0 overflow-hidden">
+    <table class="w-full">
+      <thead class="bg-surface">
+        <tr>
+          <th class="kj-th">SPZ</th>
+          <th class="kj-th">Interní kód</th>
+          <th class="kj-th">Vozidlo</th>
+          <th class="kj-th">Odpovědná osoba</th>
+          <th class="kj-th text-right">Tachometr</th>
+          <th class="kj-th">Termíny</th>
+          <th class="kj-th">Stav</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="hover:bg-surface cursor-pointer" onclick="location.href='/kniha-jizd/vehicles/{{ row.vehicle.id }}'">
+          <td class="kj-td">
+            <div class="flex items-center gap-2">
+              {{ dot(row.worst) }}
+              <a href="/kniha-jizd/vehicles/{{ row.vehicle.id }}" class="font-bold hover:text-accent">{{ row.vehicle.license_plate }}</a>
+            </div>
+          </td>
+          <td class="kj-td text-sm text-muted2">{{ row.vehicle.internal_code }}</td>
+          <td class="kj-td text-sm">{{ row.vehicle.brand }} {{ row.vehicle.model }}</td>
+          <td class="kj-td text-sm">{{ row.vehicle.responsible_user.full_name if row.vehicle.responsible_user else "—" }}</td>
+          <td class="kj-td text-sm text-right font-semibold">{{ row.vehicle.current_odometer_km | km }} km</td>
+          <td class="kj-td">
+            <div class="flex gap-1.5">
+              {% for status in row.deadlines %}
+              <span title="{{ status.label }}: {{ status.detail }}">{{ dot(status.level) }}</span>
+              {% endfor %}
+            </div>
+          </td>
+          <td class="kj-td">{{ status_badge(row.vehicle) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-muted mt-3">Sloupec Termíny: STK &middot; pojištění &middot; dálniční známka &middot; olej</p>
+  {% endif %}
+</div>
+{% endblock %}

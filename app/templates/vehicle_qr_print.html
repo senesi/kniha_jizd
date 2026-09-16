@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}QR kód {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5 kj-noprint">
+  <h1 class="text-2xl font-extrabold tracking-tight">QR kód vozidla</h1>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-sm text-muted hover:text-ink">Zpět na vozidlo</a>
+</div>
+
+{# Štítek na vozidlo. Je schválně jednoduchý a čitelný i po nalepení za
+   sklo: velká SPZ, QR, interní kód. Žádné citlivé údaje - token v URL je
+   náhodný a bez přihlášení nic neodemyká (zadání 6). #}
+<div id="label" class="bg-white border-2 border-ink rounded-2xl p-6 max-w-sm mx-auto text-center">
+  <div class="text-3xl font-extrabold tracking-tight">{{ vehicle.license_plate }}</div>
+  <div class="text-sm font-bold text-muted2 mb-4">{{ vehicle.internal_code }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</div>
+  <img src="/kniha-jizd/vehicles/{{ vehicle.id }}/qr.png" alt="QR kód vozidla {{ vehicle.license_plate }}"
+       class="w-56 h-56 mx-auto">
+  <div class="mt-4 text-sm font-extrabold">Kniha jízd</div>
+  <div class="text-xs text-muted2">Načtěte telefonem a zahajte výpůjčku</div>
+</div>
+
+<div class="flex flex-wrap gap-2 justify-center mt-6 kj-noprint">
+  <button onclick="window.print()" class="kj-btn">Vytisknout štítek</button>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/qr.png" download="qr-{{ vehicle.license_plate }}.png" class="kj-btn-secondary">Stáhnout QR jako PNG</a>
+</div>
+
+<p class="text-xs text-muted text-center mt-4 kj-noprint break-all">Odkaz v QR kódu: {{ qr_url }}</p>
+
+<style>
+  @media print {
+    .kj-noprint, header, nav, aside { display: none !important; }
+    body { background: #fff; }
+    main { padding: 0 !important; }
+  }
+</style>
+{% endblock %}

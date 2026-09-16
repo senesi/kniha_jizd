@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ "Nové vozidlo" if not vehicle else vehicle.license_plate ~ " – úprava" }} &ndash; Kniha jízd{% endblock %}
+
+{# Hodnota pole: po chybné validaci to, co uživatel napsal (form), jinak
+   uložený stav vozidla. Nikdy ne prázdno - přepsat překlep je horší než
+   ho opravit. #}
+{% macro value_of(name, fallback=none) %}{% if form.get(name) is not none %}{{ form.get(name) }}{% elif fallback is not none %}{{ fallback }}{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">{{ "Nové vozidlo" if not vehicle else "Úprava vozidla" }}</h1>
+  <a href="{{ '/kniha-jizd/vehicles' if not vehicle else '/kniha-jizd/vehicles/' ~ vehicle.id }}" class="text-sm text-muted hover:text-ink">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-5 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{{ '/kniha-jizd/vehicles/new' if not vehicle else '/kniha-jizd/vehicles/' ~ vehicle.id ~ '/edit' }}">
+  {{ csrf_field(request) }}
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Identifikace</h2>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Interní označení <span class="text-danger">*</span></label>
+        <input class="kj-input" name="internal_code" required maxlength="50" placeholder="VOZ-01"
+               value="{{ value_of('internal_code', vehicle.internal_code if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">SPZ <span class="text-danger">*</span></label>
+        <input class="kj-input" name="license_plate" required maxlength="20" placeholder="1AB 2345"
+               value="{{ value_of('license_plate', vehicle.license_plate if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Značka <span class="text-danger">*</span></label>
+        <input class="kj-input" name="brand" required maxlength="100"
+               value="{{ value_of('brand', vehicle.brand if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Model <span class="text-danger">*</span></label>
+        <input class="kj-input" name="model" required maxlength="100"
+               value="{{ value_of('model', vehicle.model if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">VIN</label>
+        <input class="kj-input" name="vin" maxlength="32"
+               value="{{ value_of('vin', vehicle.vin if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Rok výroby</label>
+        <input class="kj-input" type="number" name="year_of_manufacture" min="1900" max="2100"
+               value="{{ value_of('year_of_manufacture', vehicle.year_of_manufacture if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Typ vozidla</label>
+        <select class="kj-input" name="vehicle_type">
+          {% set current_type = form.get('vehicle_type') or (vehicle.vehicle_type if vehicle else 'osobni') %}
+          {% for option in vehicle_types %}
+          <option value="{{ option }}" {% if option == current_type %}selected{% endif %}>{{ labels.VEHICLE_TYPE.get(option, option) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="kj-label">Palivo / pohon</label>
+        <select class="kj-input" name="fuel_type" id="fuel_type">
+          {% set current_fuel = form.get('fuel_type') or (vehicle.fuel_type if vehicle else none) %}
+          <option value="">— nezadáno —</option>
+          {% for option in fuel_types %}
+          <option value="{{ option }}" {% if option == current_fuel %}selected{% endif %}>{{ labels.FUEL_TYPE.get(option, option) }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-xs text-muted mt-1">U elektromobilu se místo tankování v litrech eviduje nabíjení v kWh.</p>
+      </div>
+      <div>
+        <label class="kj-label">Objem nádrže (l)</label>
+        <input class="kj-input" type="number" step="0.1" min="0" name="tank_capacity_l"
+               value="{{ value_of('tank_capacity_l', vehicle.tank_capacity_l if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Kapacita baterie (kWh)</label>
+        <input class="kj-input" type="number" step="0.1" min="0" name="battery_capacity_kwh"
+               value="{{ value_of('battery_capacity_kwh', vehicle.battery_capacity_kwh if vehicle) }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Provoz</h2>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Odpovědná osoba</label>
+        <select class="kj-input" name="responsible_user_id">
+          {% set current_responsible = form.get('responsible_user_id') or (vehicle.responsible_user_id if vehicle else none) %}
+          <option value="">— nepřiřazeno —</option>
+          {% for candidate in users %}
+          <option value="{{ candidate.id }}" {% if current_responsible and candidate.id|string == current_responsible|string %}selected{% endif %}>{{ candidate.full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="kj-label">Stav vozidla</label>
+        <select class="kj-input" name="status">
+          {% set current_status = form.get('status') or (vehicle.status if vehicle else 'available') %}
+          {% for option in vehicle_statuses %}
+          <option value="{{ option }}" {% if option == current_status %}selected{% endif %}>{{ labels.VEHICLE_STATUS.get(option, option) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if not vehicle %}
+      {# Jen při založení. Později už tachometr hýbe pouze uzavřená jízda
+         nebo administrativní oprava se zdůvodněním (zadání 5). #}
+      <div>
+        <label class="kj-label">Počáteční stav tachometru (km)</label>
+        <input class="kj-input" type="number" min="0" name="current_odometer_km" value="{{ value_of('current_odometer_km', 0) }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav nádrže / baterie (%)</label>
+        <input class="kj-input" type="number" min="0" max="100" name="current_fuel_level" value="{{ value_of('current_fuel_level') }}">
+      </div>
+      {% endif %}
+    </div>
+    <label class="flex items-center gap-2 mt-4 cursor-pointer">
+      <input type="checkbox" name="is_active" value="1" class="w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
+             {% if (vehicle and vehicle.is_active) or not vehicle %}checked{% endif %}>
+      <span class="text-sm font-semibold">Vozidlo je aktivní (lze půjčovat)</span>
+    </label>
+  </div>
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Termíny a pojištění</h2>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">STK platí do</label>
+        <input class="kj-input" type="date" name="stk_valid_until"
+               value="{{ value_of('stk_valid_until', vehicle.stk_valid_until if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Dálniční známka platí do</label>
+        <input class="kj-input" type="date" name="vignette_valid_until"
+               value="{{ value_of('vignette_valid_until', vehicle.vignette_valid_until if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Pojišťovna</label>
+        <input class="kj-input" name="insurance_company" maxlength="255"
+               value="{{ value_of('insurance_company', vehicle.insurance_company if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Číslo pojistky</label>
+        <input class="kj-input" name="insurance_policy_number" maxlength="100"
+               value="{{ value_of('insurance_policy_number', vehicle.insurance_policy_number if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Pojištění platí do</label>
+        <input class="kj-input" type="date" name="insurance_valid_until"
+               value="{{ value_of('insurance_valid_until', vehicle.insurance_valid_until if vehicle) }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Servisní interval oleje</h2>
+    <p class="text-xs text-muted mt-1">Další termín se dopočítá sám - platí ten z obou intervalů, který nastane dřív.</p>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Poslední výměna oleje (datum)</label>
+        <input class="kj-input" type="date" name="last_oil_change_at"
+               value="{{ value_of('last_oil_change_at', vehicle.last_oil_change_at if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav km při výměně</label>
+        <input class="kj-input" type="number" min="0" name="last_oil_change_km"
+               value="{{ value_of('last_oil_change_km', vehicle.last_oil_change_km if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Interval (km)</label>
+        <input class="kj-input" type="number" min="1" name="oil_interval_km" placeholder="15000"
+               value="{{ value_of('oil_interval_km', vehicle.oil_interval_km if vehicle) }}">
+      </div>
+      <div>
+        <label class="kj-label">Interval (měsíců)</label>
+        <input class="kj-input" type="number" min="1" name="oil_interval_months" placeholder="12"
+               value="{{ value_of('oil_interval_months', vehicle.oil_interval_months if vehicle) }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Poznámka</label>
+    <textarea class="kj-input" name="notes" rows="3">{{ value_of('notes', vehicle.notes if vehicle) }}</textarea>
+  </div>
+
+  <div class="flex gap-2">
+    <button type="submit" class="kj-btn">{{ "Založit vozidlo" if not vehicle else "Uložit změny" }}</button>
+    <a href="{{ '/kniha-jizd/vehicles' if not vehicle else '/kniha-jizd/vehicles/' ~ vehicle.id }}" class="kj-btn-secondary">Zrušit</a>
+  </div>
+</form>
+{% endblock %}

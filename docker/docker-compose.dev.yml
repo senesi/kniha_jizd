@@ -1,0 +1,24 @@
+name: kniha-jizd-dev
+
+services:
+  db-dev:
+    image: postgres:17
+    container_name: kniha-jizd-postgres-dev
+    # Port 5435: 5432 je lokální systémový Postgres, 5434 si bere
+    # naradi-postgres-dev. Vždy jen na 127.0.0.1, nikdy na veřejné rozhraní.
+    ports:
+      - "127.0.0.1:5435:5432"
+    environment:
+      POSTGRES_DB: kniha_jizd_dev
+      POSTGRES_USER: kniha_jizd_dev
+      POSTGRES_PASSWORD: dev_only_password
+    volumes:
+      - kniha_jizd_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kniha_jizd_dev -d kniha_jizd_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  kniha_jizd_dev_data:

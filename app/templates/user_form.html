@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ "Nový uživatel" if not target else target.full_name }} &ndash; Kniha jízd{% endblock %}
+
+{% macro value_of(name, fallback=none) %}{% if form.get(name) is not none %}{{ form.get(name) }}{% elif fallback is not none %}{{ fallback }}{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">{{ "Nový uživatel" if not target else "Úprava uživatele" }}</h1>
+  <a href="{{ '/kniha-jizd/users' if not target else '/kniha-jizd/users/' ~ target.id }}" class="text-sm text-muted hover:text-ink">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-5 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{{ '/kniha-jizd/users/new' if not target else '/kniha-jizd/users/' ~ target.id ~ '/edit' }}">
+  {{ csrf_field(request) }}
+  <div class="kj-card">
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Jméno a příjmení <span class="text-danger">*</span></label>
+        <input class="kj-input" name="full_name" required value="{{ value_of('full_name', target.full_name if target) }}">
+      </div>
+      <div>
+        <label class="kj-label">E-mail (přihlašovací jméno) <span class="text-danger">*</span></label>
+        <input class="kj-input" type="email" name="email" required value="{{ value_of('email', target.email if target) }}">
+      </div>
+      <div>
+        <label class="kj-label">Telefon</label>
+        <input class="kj-input" name="phone" value="{{ value_of('phone', target.phone if target) }}">
+      </div>
+      {% if not target %}
+      <div>
+        <label class="kj-label">Heslo <span class="text-danger">*</span></label>
+        <input class="kj-input" type="password" name="password" required minlength="8" autocomplete="new-password">
+        <p class="text-xs text-muted mt-1">Alespoň 8 znaků.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <label class="kj-label">Role</label>
+    {% if form.get("roles") is not none %}
+      {% set current_roles = form.get("roles") %}
+    {% elif target %}
+      {% set current_roles = target.roles | map(attribute="role.name") | list %}
+    {% else %}
+      {% set current_roles = ["user"] %}
+    {% endif %}
+    <div class="grid sm:grid-cols-3 gap-2">
+      {% for role in roles %}
+      <label class="flex items-start gap-2 rounded-xl border border-border2 px-3 py-2.5 cursor-pointer hover:bg-surface">
+        <input type="checkbox" name="roles" value="{{ role.name }}"
+               class="mt-0.5 w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
+               {% if role.name in current_roles %}checked{% endif %}>
+        <span>
+          <span class="block text-sm font-bold">{{ labels.ROLE.get(role.name, role.name) }}</span>
+          <span class="block text-xs text-muted">{{ role.description }}</span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+
+    {% if target %}
+    <label class="flex items-center gap-2 mt-4 cursor-pointer">
+      <input type="checkbox" name="is_active" value="1"
+             class="w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
+             {% if form.get("is_active") if form.get("is_active") is not none else target.is_active %}checked{% endif %}>
+      <span class="text-sm font-semibold">Účet je aktivní (uživatel se může přihlásit)</span>
+    </label>
+    {% endif %}
+  </div>
+
+  <div class="flex gap-2 mt-4">
+    <button type="submit" class="kj-btn">{{ "Založit uživatele" if not target else "Uložit změny" }}</button>
+    <a href="{{ '/kniha-jizd/users' if not target else '/kniha-jizd/users/' ~ target.id }}" class="kj-btn-secondary">Zrušit</a>
+  </div>
+</form>
+{% endblock %}

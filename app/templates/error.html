@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chyba &ndash; Kniha jízd</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/kniha-jizd/static/favicon-32.png">
+  {% include "_theme.html" %}
+</head>
+<body class="min-h-screen bg-surface flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full text-center">
+    <p class="text-sm font-semibold text-danger mb-2">Chyba {{ status_code }}</p>
+    <p class="text-ink mb-6">{{ detail }}</p>
+    <div class="flex flex-wrap gap-2 justify-center">
+      <a href="{{ back_url }}" class="kj-btn">&larr; Zpět</a>
+      <a href="/kniha-jizd/" class="kj-btn-secondary">Přehled</a>
+    </div>
+  </div>
+</body>
+</html>

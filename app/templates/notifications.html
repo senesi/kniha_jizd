@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Upozornění &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">Upozornění</h1>
+  {% if unread_notifications %}
+  <form method="post" action="/kniha-jizd/notifications/read-all">
+    {{ csrf_field(request) }}
+    <button type="submit" class="kj-btn-secondary !min-h-[38px] !px-3 !text-sm">Označit vše jako přečtené</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not notifications %}
+<div class="kj-card text-center text-muted2">Žádná upozornění.</div>
+{% endif %}
+
+<div class="grid gap-2">
+  {% for notification in notifications %}
+  <a href="/kniha-jizd/notifications/{{ notification.id }}"
+     class="kj-card !p-4 block hover:bg-surface {% if not notification.read_at %}border-l-4 !border-l-accent{% endif %}">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="kj-badge bg-surface text-muted2">{{ labels.NOTIFICATION_KIND.get(notification.kind, notification.kind) }}</span>
+          {% if not notification.read_at %}<span class="kj-badge bg-accent/15 text-accent">Nové</span>{% endif %}
+        </div>
+        <div class="font-bold mt-1">{{ notification.title }}</div>
+        {% if notification.body %}
+        <p class="text-sm text-muted2 whitespace-pre-line mt-1">{{ notification.body }}</p>
+        {% endif %}
+      </div>
+      <span class="text-xs text-muted shrink-0">{{ notification.created_at | dt }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

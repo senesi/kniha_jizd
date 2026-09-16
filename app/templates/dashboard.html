@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import dot, status_badge %}
+{% block title %}Přehled &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-extrabold tracking-tight mb-1">Přehled</h1>
+<p class="text-muted2 mb-5">Dobrý den, {{ user.full_name }}.</p>
+
+{# Na mobilu je první věc, kterou řidič potřebuje, cesta k autu -
+   ne statistiky. Ty jsou hned pod tím. #}
+<div class="grid sm:grid-cols-2 gap-3 mb-6">
+  <a href="/kniha-jizd/scan" class="kj-btn-hero">📷 Načíst QR kód vozidla</a>
+  <a href="/kniha-jizd/vehicles" class="kj-btn-secondary !min-h-[56px] !text-base">Vybrat vozidlo ze seznamu</a>
+</div>
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+  {% for label, value in [
+    ("Vozidel celkem", counts.total),
+    ("Aktivních", counts.active),
+    ("V servisu", counts.in_service),
+    ("Mimo provoz", counts.blocked),
+  ] %}
+  <div class="kj-card !p-4">
+    <div class="text-xs font-bold uppercase tracking-wide text-muted2">{{ label }}</div>
+    <div class="text-3xl font-extrabold mt-1">{{ value }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="mb-6">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Vyžaduje pozornost</h2>
+  {% if attention %}
+  <div class="grid gap-2">
+    {% for item in attention %}
+    <a href="/kniha-jizd/vehicles/{{ item.vehicle.id }}"
+       class="kj-card !p-4 flex items-start justify-between gap-3 hover:bg-surface">
+      <div class="min-w-0">
+        <div class="font-extrabold">{{ item.vehicle.license_plate }}</div>
+        <div class="text-xs text-muted2">{{ item.vehicle.internal_code }} &middot; {{ item.vehicle.brand }} {{ item.vehicle.model }}</div>
+        <div class="mt-2 space-y-1">
+          {% for status in item.statuses %}
+          <div class="flex items-center gap-2 text-sm">
+            {{ dot(status.level) }}
+            <span class="font-semibold">{{ status.label }}:</span>
+            <span class="text-muted2">{{ status.detail }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {{ status_badge(item.vehicle) }}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="kj-card text-sm text-muted2">Žádné blížící se ani propadlé termíny. 🎉</div>
+  {% endif %}
+</div>
+
+{% if my_vehicles %}
+<div>
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Moje zodpovědnost</h2>
+  <div class="grid sm:grid-cols-2 gap-2">
+    {% for vehicle in my_vehicles %}
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface">
+      <div class="min-w-0">
+        <div class="font-extrabold truncate">{{ vehicle.license_plate }}</div>
+        <div class="text-xs text-muted2 truncate">{{ vehicle.brand }} {{ vehicle.model }} &middot; {{ vehicle.current_odometer_km | km }} km</div>
+      </div>
+      {{ status_badge(vehicle) }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

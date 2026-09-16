@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Uživatelé &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between gap-3 mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">Uživatelé</h1>
+  <a href="/kniha-jizd/users/new" class="kj-btn">+ Nový uživatel</a>
+</div>
+
+<div class="kj-card !p-0 overflow-hidden">
+  <table class="w-full">
+    <thead class="bg-surface">
+      <tr>
+        <th class="kj-th">Jméno</th>
+        <th class="kj-th">E-mail</th>
+        <th class="kj-th hidden sm:table-cell">Role</th>
+        <th class="kj-th">Stav</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for target in users %}
+      <tr class="hover:bg-surface">
+        <td class="kj-td"><a href="/kniha-jizd/users/{{ target.id }}" class="font-bold hover:text-accent">{{ target.full_name }}</a></td>
+        <td class="kj-td text-sm text-muted2 break-all">{{ target.email }}</td>
+        <td class="kj-td hidden sm:table-cell">
+          <div class="flex flex-wrap gap-1">
+            {% for assignment in target.roles %}
+            <span class="kj-badge bg-surface text-subtle border border-divider">{{ labels.ROLE.get(assignment.role.name, assignment.role.name) }}</span>
+            {% endfor %}
+          </div>
+        </td>
+        <td class="kj-td">
+          {% if target.is_active %}
+          <span class="kj-badge bg-success/15 text-success">Aktivní</span>
+          {% else %}
+          <span class="kj-badge bg-muted/15 text-muted2">Neaktivní</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
