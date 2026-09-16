@@ -1,0 +1,63 @@
+# Produkční stack Knihy jízd na sdíleném VPS.
+#
+# Na VPS leží jako /opt/kniha-jizd/docker/docker-compose.yml a spouští se
+# odtud. Žádné secrets tady nejsou - všechny jdou z
+# /opt/kniha-jizd/config/.env, který do Gitu nepatří.
+#
+# Na stejném stroji běží další nezávislé projekty (DSS, Evidence nářadí).
+# Tenhle soubor se smí dotýkat výhradně kontejnerů, sítě a volumes
+# Knihy jízd.
+name: kniha-jizd
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: kniha-jizd-app:latest
+    container_name: kniha-jizd-app
+    restart: unless-stopped
+    env_file:
+      - /opt/kniha-jizd/config/.env
+    # Jen na loopback. Ven vede pouze nginx na hostu, který na tenhle port
+    # proxuje /kniha-jizd/ - aplikace ani databáze nesmí být vidět přímo
+    # z internetu (zadání 3).
+    ports:
+      - "127.0.0.1:8002:8000"
+    volumes:
+      - /opt/kniha-jizd/data/photos:/opt/kniha-jizd/data/photos
+      - /opt/kniha-jizd/data/documents:/opt/kniha-jizd/data/documents
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  db:
+    image: postgres:17
+    container_name: kniha-jizd-postgres
+    restart: unless-stopped
+    # Bez `ports:` - databáze je dostupná jen uvnitř sítě tohoto stacku,
+    # nikdy z hostu a už vůbec ne zvenčí.
+    environment:
+      POSTGRES_DB: ${KJ_DB_NAME}
+      POSTGRES_USER: ${KJ_DB_USER}
+      POSTGRES_PASSWORD: ${KJ_DB_PASSWORD}
+    env_file:
+      - /opt/kniha-jizd/config/.env
+    volumes:
+      - kniha_jizd_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KJ_DB_USER} -d ${KJ_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  # Pojmenovaný volume - persistentní data, která deploy kódu nikdy
+  # nemaže ani nerecykluje.
+  kniha_jizd_pgdata:
