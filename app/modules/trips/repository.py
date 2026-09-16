@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -92,6 +92,28 @@ async def list_all_active_trips(db: AsyncSession) -> list[Trip]:
 async def count_active_trips(db: AsyncSession) -> int:
     result = await db.execute(select(Trip.id).where(Trip.status == "active"))
     return len(result.all())
+
+
+async def find_overlapping_trip(
+    db: AsyncSession, *, vehicle_id: uuid.UUID, trip_id: uuid.UUID, start, end,
+) -> Trip | None:
+    """Jiná jízda téhož vozidla, která se s daným oknem překrývá. Slouží
+    ke kontrole při ruční opravě časů (požadavek A) - otevřená jízda
+    (ended_at IS NULL) se počítá jako trvající dosud."""
+    result = await db.execute(
+        select(Trip)
+        .where(
+            Trip.vehicle_id == vehicle_id,
+            Trip.id != trip_id,
+            Trip.status != "cancelled",
+            Trip.started_at < end,
+            or_(Trip.ended_at.is_(None), Trip.ended_at > start),
+        )
+        .options(*_trip_load_options())
+        .order_by(Trip.started_at)
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 async def list_candidate_drivers(db: AsyncSession, trip: Trip) -> list[User]:

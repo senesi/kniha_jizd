@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_macros.html" import warning_box %}
+{% block title %}Oprava časů jízdy &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% macro local_dt(value) %}{% if value %}{{ value.strftime("%Y-%m-%dT%H:%M") }}{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Oprava časů jízdy</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+<div class="rounded-xl bg-info/10 border border-info/30 px-4 py-3 mb-4 text-sm text-subtle">
+  Opravený čas se v knize jízd označí jako upravený, aby nešel zaměnit
+  se skutečně naměřeným. Původní i nová hodnota zůstává v auditu.
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/trips/{{ trip.id }}/times">
+  {{ csrf_field(request) }}
+  {{ warning_box(warnings) }}
+
+  <div class="kj-card mb-4">
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label mt-0">Zahájení jízdy <span class="text-danger">*</span></label>
+        <input class="kj-input" type="datetime-local" name="started_at" required
+               value="{{ form.get('started_at') or local_dt(trip.started_at) }}">
+      </div>
+      <div>
+        <label class="kj-label mt-0">Ukončení jízdy</label>
+        <input class="kj-input" type="datetime-local" name="ended_at"
+               value="{{ form.get('ended_at') or local_dt(trip.ended_at) }}">
+        <p class="text-xs text-muted mt-1">
+          {% if trip.status == "active" %}Jízda ještě běží – nechte prázdné.{% else %}U uzavřené jízdy je povinné.{% endif %}
+        </p>
+      </div>
+    </div>
+
+    <label class="kj-label">Důvod opravy <span class="text-danger">*</span></label>
+    <input class="kj-input" name="reason" required maxlength="500"
+           value="{{ form.get('reason', '') }}"
+           placeholder="např. řidič zapomněl jízdu ukončit, telefon byl bez signálu">
+    <p class="text-xs text-muted mt-1">Uloží se jako poznámka k jízdě i do auditu.</p>
+  </div>
+
+  <button type="submit" class="kj-btn">Uložit opravené časy</button>
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="kj-btn-secondary ml-2">Zrušit</a>
+</form>
+{% endblock %}

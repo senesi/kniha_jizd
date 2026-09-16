@@ -15,6 +15,7 @@ from app.models.fleet import (  # noqa: F401 - imported for Alembic metadata
     TripDriver,
     TripFueling,
     TripNote,
+    TripRequest,
     Vehicle,
     VehicleAssignment,
     VehicleDefect,

@@ -30,6 +30,14 @@ MESSAGES: dict[str, str] = {
     "reservation_created": "Rezervace byla vytvořena.",
     "reservation_updated": "Rezervace byla upravena.",
     "reservation_cancelled": "Rezervace byla zrušena.",
+    "trip_times_edited": "Časy jízdy byly opraveny.",
+    "approval_requested": "Žádost byla odeslána ke schválení.",
+    "approval_approved": "Žádost byla schválena.",
+    "approval_rejected": "Žádost byla zamítnuta.",
+    "approval_cancelled": "Žádost byla stažena.",
+    "approval_needed": "Toto vozidlo vyžaduje schválení – nejdřív odešlete žádost.",
+    "defect_reported": "Závada byla nahlášena.",
+    "defect_updated": "Závada byla aktualizována.",
 }
 
 

@@ -33,7 +33,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 1 | projekt, autentizace, uživatelé, vozidla, odpovědné osoby, QR, mobilní UI, dashboard | **hotovo** |
 | 2 | výpůjčky (start/konec, km, nádrž, tachometr, foto, účel, trasa, další řidiči) | **hotovo** |
 | 3 | rezervace a kalendář | **hotovo** |
-| 4 | závady | připraveno v modelu |
+| 4 | závady | **hotovo** |
 | 5 | tankování / nabíjení, účtenky, OCR infrastruktura | model + rozhraní `app/core/ocr.py` hotové, chybí poskytovatel a samotné tankování |
 | 6 | servis a dokumenty vozidla | připraveno v modelu |
 | 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
@@ -107,7 +107,7 @@ app/
                fleet.py (celá doména vozidel)
   modules/     <modul>/{router_web,service,repository,schemas}.py
                hotové: auth, dashboard, vehicles, trips, reservations,
-               users, notifications, settings
+               defects, approvals, users, notifications, settings
   templates/   Jinja2, mobile-first, Tailwind přes CDN
   static/      vendorované JS (qr-scanner), favicony
 ```
@@ -135,6 +135,25 @@ Role: `admin`, `odpovedna_osoba`, `user` (řidič). Zakládá je migrace
   toho"). Rozhodnutí o konkrétním vozidle vždy patří do těla routy.
 - Skrytí tlačítka v šabloně není kontrola oprávnění.
 
+## 7a. Viditelnost vozidla
+
+Vozidlo má `visibility`: `all` (vidí každý) nebo `restricted` (jen
+odpovědná osoba a administrátor). Pro ostatní vozidlo **neexistuje** —
+neobjeví se v seznamu, na přehledu, ve výběru, v kalendáři, v závadách
+ani po načtení QR kódu.
+
+- Výpisy filtruje `visible_vehicles_condition(codes, user)` přidaná do
+  dotazu, ne až šablona.
+- Jednotlivé vozidlo hlídá `assert_vehicle_visible(...)`, která vrací
+  **404, ne 403** — u skrytého vozidla je i informace „existuje, ale
+  nemáš právo" únikem, a přes QR token by šlo ověřovat, která nálepka
+  patří kterému autu.
+- `SEE_ALL_CODES` obsahuje jen `fleet.vehicle.manage`. Schválně tam
+  **není** `fleet.logbook.view` — to je oprávnění ke knize jízd, ne k
+  obcházení viditelnosti, a má ho i odpovědná osoba.
+
+Nová routa, která pracuje s vozidlem, musí projít jedním z těch dvou.
+
 ## 7b. Validace: kdy blokovat a kdy se zeptat
 
 Zadání 32 chce raději upozornit a vyžádat potvrzení než tvrdě blokovat.
@@ -148,7 +167,11 @@ V kódu jsou to dvě různé výjimky (`app/modules/trips/service.py`):
   takže je z historie vidět, že to člověk viděl a rozhodl.
 
 Nové varování se přidává vyhozením `TripWarning` — formulář ho vykreslí
-sám, není potřeba sahat do šablony.
+sám, není potřeba sahat do šablony. Dosud existují: `vehicle_status`,
+`critical_defect`, `reservation`, `odometer_jump`, `trip_overlap`, `ocr`.
+
+Výjimkou je `TripApprovalRequired` (potomek `TripError`): chybějící
+schválení se neodklikává, jízda prostě nevznikne.
 
 ## 8. Bezpečnostní zásady projektu
 

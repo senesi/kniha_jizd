@@ -125,6 +125,31 @@
              {% if (vehicle and vehicle.is_active) or not vehicle %}checked{% endif %}>
       <span class="text-sm font-semibold">Vozidlo je aktivní (lze půjčovat)</span>
     </label>
+
+    <label class="flex items-start gap-2 mt-3 cursor-pointer">
+      <input type="checkbox" name="approval_required" value="1"
+             class="mt-0.5 w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
+             {% if vehicle and vehicle.approval_required %}checked{% endif %}>
+      <span>
+        <span class="block text-sm font-semibold">Výpůjčka vyžaduje schválení</span>
+        <span class="block text-xs text-muted">
+          Řidič musí nejdřív odeslat žádost. Odpovědná osoba a administrátor si vozidlo berou přímo.
+        </span>
+      </span>
+    </label>
+
+    <label class="kj-label">Viditelnost vozidla</label>
+    {% set current_visibility = form.get('visibility') or (vehicle.visibility if vehicle else 'all') %}
+    <select class="kj-input" name="visibility">
+      {% for option in ["all", "restricted"] %}
+      <option value="{{ option }}" {% if option == current_visibility %}selected{% endif %}>
+        {{ labels.VEHICLE_VISIBILITY.get(option, option) }}
+      </option>
+      {% endfor %}
+    </select>
+    <p class="text-xs text-muted mt-1">
+      Skryté vozidlo neuvidí ostatní nikde – ani v seznamu, kalendáři, ani po načtení QR kódu.
+    </p>
   </div>
 
   <div class="kj-card mb-4">

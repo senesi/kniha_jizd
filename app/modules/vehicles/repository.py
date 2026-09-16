@@ -15,10 +15,17 @@ def _vehicle_load_options():
     )
 
 
-async def list_vehicles(db: AsyncSession, *, active_only: bool = False) -> list[Vehicle]:
+async def list_vehicles(
+    db: AsyncSession, *, active_only: bool = False, visible_to=None,
+) -> list[Vehicle]:
+    """`visible_to` je podmínka z app/core/access.py:visible_vehicles_condition.
+    None znamená „uživatel vidí všechno" - ne „nefiltrovat, protože jsme
+    zapomněli". Každé volání ji má předat (požadavek D)."""
     stmt = select(Vehicle).where(Vehicle.deleted_at.is_(None))
     if active_only:
         stmt = stmt.where(Vehicle.is_active.is_(True))
+    if visible_to is not None:
+        stmt = stmt.where(visible_to)
     result = await db.execute(stmt.options(*_vehicle_load_options()).order_by(Vehicle.internal_code))
     return list(result.scalars().all())
 

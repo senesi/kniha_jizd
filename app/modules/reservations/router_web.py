@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash
+from app.core.access import assert_vehicle_visible, visible_vehicles_condition
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, get_user_permission_codes, require_permission
@@ -35,10 +36,14 @@ async def _load(db: AsyncSession, reservation_id: uuid.UUID) -> VehicleReservati
     return reservation
 
 
-async def _load_vehicle(db: AsyncSession, vehicle_id: uuid.UUID) -> Vehicle:
+async def _load_vehicle(
+    db: AsyncSession, vehicle_id: uuid.UUID, *, codes: set[str] | None = None, user: User | None = None,
+) -> Vehicle:
     vehicle = await vehicles_repository.get_vehicle(db, vehicle_id)
     if vehicle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vozidlo nebylo nalezeno.")
+    if codes is not None and user is not None:
+        assert_vehicle_visible(codes, vehicle, user)
     return vehicle
 
 
@@ -84,11 +89,19 @@ async def reservations_calendar(
     days = calendar.week_days(start)
     window_start, window_end = calendar.window_bounds(days)
 
-    vehicles = await vehicles_repository.list_vehicles(db, active_only=True)
-    reservations = await repository.list_in_window(db, start=window_start, end=window_end)
-    active_trips = await repository.active_trips_in_window(db, start=window_start, end=window_end)
-
     codes = await get_user_permission_codes(db, user.id)
+    # Řádky mřížky určuje seznam vozidel - skryté vozidlo tedy v kalendáři
+    # není vidět vůbec, ani cizí rezervací na něm (požadavek D).
+    vehicles = await vehicles_repository.list_vehicles(
+        db, active_only=True, visible_to=visible_vehicles_condition(codes, user)
+    )
+    visible_ids = {vehicle.id for vehicle in vehicles}
+    reservations = [
+        reservation
+        for reservation in await repository.list_in_window(db, start=window_start, end=window_end)
+        if reservation.vehicle_id in visible_ids
+    ]
+    active_trips = await repository.active_trips_in_window(db, start=window_start, end=window_end)
     return await render_page(
         request, "reservations_calendar.html", user, db,
         rows=calendar.build_rows(vehicles, reservations, active_trips, days),
@@ -138,7 +151,9 @@ async def reservation_new_form(
 
     return await render_page(
         request, "reservation_form.html", user, db,
-        reservation=None, vehicles=await vehicles_repository.list_vehicles(db, active_only=True),
+        reservation=None, vehicles=await vehicles_repository.list_vehicles(
+            db, active_only=True, visible_to=visible_vehicles_condition(codes, user)
+        ),
         error=None, form=prefill, can_create_service=MANAGE in codes,
     )
 
@@ -165,7 +180,9 @@ async def reservation_create(
     async def rerender(error: str):
         return await render_page(
             request, "reservation_form.html", user, db, status_code=400,
-            reservation=None, vehicles=await vehicles_repository.list_vehicles(db, active_only=True),
+            reservation=None, vehicles=await vehicles_repository.list_vehicles(
+            db, active_only=True, visible_to=visible_vehicles_condition(codes, user)
+        ),
             error=error, form=payload, can_create_service=MANAGE in codes,
         )
 
@@ -177,7 +194,7 @@ async def reservation_create(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Nemáš oprávnění odstavit vozidlo.")
 
     try:
-        vehicle = await _load_vehicle(db, uuid.UUID(payload["vehicle_id"]))
+        vehicle = await _load_vehicle(db, uuid.UUID(payload["vehicle_id"]), codes=codes, user=user)
     except ValueError:
         return await rerender("Vyberte vozidlo.")
 
@@ -237,7 +254,9 @@ async def reservation_edit_form(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tato rezervace není vaše.")
     return await render_page(
         request, "reservation_form.html", user, db,
-        reservation=reservation, vehicles=await vehicles_repository.list_vehicles(db, active_only=True),
+        reservation=reservation, vehicles=await vehicles_repository.list_vehicles(
+            db, active_only=True, visible_to=visible_vehicles_condition(codes, user)
+        ),
         error=None, form={}, can_create_service=MANAGE in codes,
     )
 
@@ -273,7 +292,9 @@ async def reservation_update(
     except service.ReservationError as error:
         return await render_page(
             request, "reservation_form.html", user, db, status_code=400,
-            reservation=reservation, vehicles=await vehicles_repository.list_vehicles(db, active_only=True),
+            reservation=reservation, vehicles=await vehicles_repository.list_vehicles(
+            db, active_only=True, visible_to=visible_vehicles_condition(codes, user)
+        ),
             error=str(error), form=payload, can_create_service=MANAGE in codes,
         )
     return flash.redirect(f"/kniha-jizd/reservations/{reservation.id}", "reservation_updated")

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Žádost o vozidlo {{ trip_request.vehicle.license_plate }}{% endblock %}
+
+{% macro status_badge(request) %}
+  {% set styles = {
+    "pending": "bg-info/15 text-info",
+    "approved": "bg-success/15 text-success",
+    "rejected": "bg-danger/15 text-danger",
+    "cancelled": "bg-muted/15 text-muted2",
+  } %}
+  <span class="kj-badge {{ styles.get(request.status, 'bg-surface text-muted2') }}">
+    {{ labels.TRIP_REQUEST_STATUS.get(request.status, request.status) }}
+  </span>
+{% endmacro %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <div class="flex items-center gap-2 flex-wrap">
+      <h1 class="text-2xl font-extrabold tracking-tight">Žádost o vozidlo</h1>
+      {{ status_badge(trip_request) }}
+      {% if trip_request.is_expired %}
+      <span class="kj-badge bg-muted/15 text-muted2">Platnost vypršela</span>
+      {% endif %}
+    </div>
+    <a href="/kniha-jizd/vehicles/{{ trip_request.vehicle_id }}" class="text-muted2 hover:text-accent">
+      {{ trip_request.vehicle.license_plate }} &middot; {{ trip_request.vehicle.brand }} {{ trip_request.vehicle.model }}
+    </a>
+  </div>
+</div>
+
+{% if trip_request.is_usable and is_mine %}
+<div class="rounded-2xl bg-success/10 border border-success/30 p-4 mb-4">
+  <p class="text-sm font-extrabold text-success">Schváleno – můžete vyjet</p>
+  {% if trip_request.valid_until %}
+  <p class="text-sm text-subtle mt-1">Výpůjčku zahajte do {{ trip_request.valid_until | dt }}.</p>
+  {% endif %}
+</div>
+<a href="/kniha-jizd/vehicles/{{ trip_request.vehicle_id }}/trips/start" class="kj-btn-hero mb-4">Zahájit výpůjčku</a>
+{% endif %}
+
+<div class="kj-card mb-4">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+    <div>
+      <div class="text-xs text-muted">Žadatel</div>
+      <div class="font-semibold">{{ trip_request.requester.full_name }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Podáno</div>
+      <div class="font-semibold">{{ trip_request.requested_at | dt }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Rozhodl</div>
+      <div class="font-semibold">{{ trip_request.decider.full_name if trip_request.decider else "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Rozhodnuto</div>
+      <div class="font-semibold">{{ trip_request.decided_at | dt }}</div>
+    </div>
+  </div>
+
+  {% if trip_request.needed_from or trip_request.purpose %}
+  <div class="mt-4 pt-4 border-t border-divider-soft grid sm:grid-cols-2 gap-4 text-sm">
+    {% if trip_request.needed_from %}
+    <div>
+      <div class="text-xs text-muted">Požadované období</div>
+      <div class="font-semibold">{{ trip_request.needed_from | dt }} – {{ trip_request.needed_to | dt }}</div>
+    </div>
+    {% endif %}
+    {% if trip_request.purpose %}
+    <div>
+      <div class="text-xs text-muted">Účel</div>
+      <div class="font-semibold whitespace-pre-line">{{ trip_request.purpose }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if trip_request.decision_note %}
+  <div class="mt-4 pt-4 border-t border-divider-soft">
+    <div class="text-xs text-muted mb-1">Vyjádření schvalovatele</div>
+    <p class="text-sm whitespace-pre-line">{{ trip_request.decision_note }}</p>
+  </div>
+  {% endif %}
+</div>
+
+{% if can_decide and trip_request.is_open %}
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Rozhodnout</h2>
+  <form method="post" action="/kniha-jizd/approvals/{{ trip_request.id }}/decide">
+    {{ csrf_field(request) }}
+    <label class="kj-label mt-0">Vyjádření (u zamítnutí povinné)</label>
+    <input class="kj-input" name="note" maxlength="1000" placeholder="důvod, podmínky, poznámka">
+    <div class="flex flex-wrap gap-2 mt-4">
+      <button type="submit" name="decision" value="approve" class="kj-btn">Schválit</button>
+      <button type="submit" name="decision" value="reject" class="kj-btn-danger">Zamítnout</button>
+    </div>
+  </form>
+  <p class="text-xs text-muted mt-2">Po schválení má žadatel omezenou dobu na to, aby výpůjčku skutečně zahájil.</p>
+</div>
+{% endif %}
+
+{% if trip_request.is_open and (is_mine or can_decide) %}
+<form method="post" action="/kniha-jizd/approvals/{{ trip_request.id }}/cancel">
+  {{ csrf_field(request) }}
+  <button type="submit" class="kj-btn-secondary">Stáhnout žádost</button>
+</form>
+{% endif %}
+{% endblock %}

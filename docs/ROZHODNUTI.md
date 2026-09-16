@@ -282,3 +282,83 @@ ale žádá viditelné upozornění a uložení potvrzení do historie.
 **Co se nestane.** Přejetá cizí rezervace **zůstává aktivní**. Ten,
 kdo si vozidlo zamluvil, o svůj záznam nepřijde jen proto, že mu ho
 někdo vzal — jinak by z kalendáře zmizela stopa po tom, co se stalo.
+
+---
+
+## R18 — Skryté vozidlo vrací 404, ne 403
+
+**Rozhodnutí.** `assert_vehicle_visible` odpovídá `404 Vozidlo nebylo
+nalezeno`. Výpisy filtruje podmínka přidaná přímo do dotazu
+(`visible_vehicles_condition`), ne šablona.
+
+**Proč 404.** U vozidla s `visibility="restricted"` je i samotná věta
+„tohle vozidlo existuje, jen na něj nemáš právo" informace, která se ven
+dostat nemá. Přes QR token by navíc rozdíl mezi 403 a 404 umožnil
+ověřovat, která nálepka patří kterému autu — stačilo by projít parkoviště
+a načíst kódy.
+
+**Proč filtrovat v dotazu.** Skrýt řádek až v šabloně znamená, že se data
+stejně načtou a dřív nebo později někde proklouznou — v exportu, v
+JSON odpovědi, v počtu na dashboardu. Filtr v `WHERE` je jediné místo,
+kde to platí pro všechny výstupy naráz.
+
+**Pozor.** `SEE_ALL_CODES` obsahuje výhradně `fleet.vehicle.manage`.
+Při prvním pokusu tam bylo i `fleet.logbook.view` — jenže to má i
+odpovědná osoba, takže by viděla cizí skrytá vozidla. Odhalil to test
+`test_responsible_person_sees_own_restricted_vehicle`.
+
+---
+
+## R19 — Schválení není jízda
+
+**Rozhodnutí.** `fleet.trip_requests` má stavy
+pending/approved/rejected/cancelled. Že se schválení **použilo**, se
+pozná z `Trip.request_id` (unikátní sloupec), ne ze stavu na žádosti.
+
+**Proč.** Kdyby „použito" byl pátý stav, musel by ho někdo přepínat a
+dva souběžné výjezdy na totéž schválení by mohly projít oba. Unikátní
+`Trip.request_id` je stejná záruka jako u rezervací (R4) — druhý zápis
+prostě neprojde.
+
+**Vypršení.** `valid_until` se nastavuje až při schválení a čekající
+žádost nikdy nevyprší sama od sebe — čeká na rozhodnutí, jak dlouho je
+potřeba. „Vypršelo" je proto čtená vlastnost, ne uložený stav: neexistuje
+nic, co by ho spolehlivě přepnulo.
+
+**Kdo nežádá.** Odpovědná osoba a administrátor si vozidlo berou přímo
+(`needs_approval` je pro ně vždy False) — žádost sami sobě by byla jen
+obřad navíc.
+
+---
+
+## R20 — Opravený čas jízdy se nesmí tvářit jako naměřený
+
+**Rozhodnutí.** `Trip.times_edited_at` / `times_edited_by`. Vyplněný
+`times_edited_at` je jediné, co odlišuje „takhle to bylo" od „takhle to
+někdo přepsal"; v UI se vedle času zobrazí odznak *upraveno*. Původní i
+nová hodnota jde do auditu (`action="trip_times_edit"`) a důvod navíc
+jako poznámka k jízdě.
+
+**Co se odmítá tvrdě.** Konec před začátkem, čas v budoucnosti, chybějící
+zdůvodnění, uzavřená jízda bez času konce.
+
+**Co jen varuje.** Překryv s jinou jízdou téhož vozidla — typicky známka
+překlepu, ale legitimní třeba u opravy dvou po sobě jdoucích jízd. Projde
+po potvrzení, které skončí v auditu.
+
+---
+
+## R21 — Náhled vozidla vyžaduje eager loading
+
+**Rozhodnutí.** Náhledová fotka je první `Attachment` s
+`kind="vehicle_photo"`; žádný nový sloupec. Každý repozitář, jehož data
+se vykreslují makrem `thumb()`, musí vozidlo načítat
+`selectinload(...).selectinload(Vehicle.photos)`.
+
+**Proč to hlídat.** Bez toho se galerie dotahuje až v šabloně, tedy mimo
+async kontext, a stránka spadne na `MissingGreenlet` — ne na chybějící
+obrázek. Objevilo se to hned u seznamu žádostí a závad. Když přibude
+další místo s náhledem, je tohle první věc ke kontrole.
+
+**Bez fotky** se kreslí neutrální silueta auta, ne prázdné místo: řidič
+musí poznat, že fotka chybí, a ne že se nenačetla.

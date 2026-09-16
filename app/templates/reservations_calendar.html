@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_vehicle.html" import thumb %}
 {% block title %}Kalendář rezervací &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -48,9 +49,12 @@
       {% for row in rows %}
       <tr>
         <td class="kj-td sticky left-0 bg-white z-10">
-          <a href="/kniha-jizd/vehicles/{{ row.vehicle.id }}" class="block hover:text-accent">
-            <div class="font-bold text-sm">{{ row.vehicle.license_plate }}</div>
-            <div class="text-[11px] text-muted2 truncate">{{ row.vehicle.brand }} {{ row.vehicle.model }}</div>
+          <a href="/kniha-jizd/vehicles/{{ row.vehicle.id }}" class="flex items-center gap-2 hover:text-accent">
+            {{ thumb(row.vehicle, "sm") }}
+            <span class="min-w-0">
+              <span class="block font-bold text-sm">{{ row.vehicle.license_plate }}</span>
+              <span class="block text-[11px] text-muted2 truncate">{{ row.vehicle.brand }} {{ row.vehicle.model }}</span>
+            </span>
           </a>
         </td>
         {% for cell in row.cells %}

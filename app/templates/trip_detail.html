@@ -23,10 +23,20 @@
 <a href="/kniha-jizd/trips/{{ trip.id }}/end" class="kj-btn-hero mb-4">Ukončit výpůjčku</a>
 {% endif %}
 
+{% if trip.status == "active" %}
+<a href="/kniha-jizd/vehicles/{{ vehicle.id }}/defects/new?trip={{ trip.id }}"
+   class="kj-btn-secondary w-full mb-4">Nahlásit závadu na tomto vozidle</a>
+{% endif %}
+
 <div class="kj-card mb-4">
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
     <div>
-      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Začátek</div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">
+        Začátek
+        {% if trip.times_edited_at %}
+        <span class="kj-badge bg-warning/15 text-warning ml-1" title="Čas byl ručně opraven {{ trip.times_edited_at | dt }}">upraveno</span>
+        {% endif %}
+      </div>
       <div class="text-sm font-semibold mt-1">{{ trip.started_at | dt }}</div>
       <div class="text-lg font-extrabold">{{ trip.start_odometer_km | km }} km</div>
     </div>
@@ -159,6 +169,18 @@
     <button type="submit" class="kj-btn-secondary">Přidat</button>
   </form>
 </div>
+
+{% if can_end %}
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Datum a čas jízdy</h2>
+  {% if trip.times_edited_at %}
+  <p class="text-sm text-warning font-semibold mb-2">
+    Časy této jízdy byly ručně upraveny {{ trip.times_edited_at | dt }}.
+  </p>
+  {% endif %}
+  <a href="/kniha-jizd/trips/{{ trip.id }}/times" class="kj-btn-secondary">Opravit datum a čas</a>
+</div>
+{% endif %}
 
 {% if can_cancel and trip.status == "active" %}
 <div class="kj-card">

@@ -44,6 +44,16 @@ TRIP_STATUSES = ["active", "completed", "cancelled"]
 # Předdefinované účely jízdy (zadání 13) + volný text v purpose_text.
 TRIP_PURPOSES = ["servis", "montaz", "doprava_materialu", "schuzka", "sluzebni_cesta", "jine"]
 
+# Kdo vozidlo uvidí (požadavek D). "restricted" = jen odpovědná osoba a
+# administrátor; pro ostatní vozidlo neexistuje nikde - v seznamu, na
+# přehledu, ve výběru, v kalendáři ani přes QR.
+VEHICLE_VISIBILITIES = ["all", "restricted"]
+
+# Žádost o použití vozidla u vozidel s approval_required (požadavek B).
+# "expired" je jen čtená vlastnost, ne uložený stav - viz TripRequest.
+TRIP_REQUEST_STATUSES = ["pending", "approved", "rejected", "cancelled"]
+TRIP_REQUEST_TERMINAL_STATUSES = {"rejected", "cancelled"}
+
 RESERVATION_STATUSES = ["active", "cancelled", "fulfilled"]
 # A calendar block is the same shape as a reservation (vehicle + time
 # window + no-overlap rule), so it is the same table with a different kind
@@ -69,6 +79,7 @@ ATTACHMENT_KINDS = [
 
 NOTIFICATION_KINDS = [
     "reservation", "trip_start", "trip_end", "defect", "service_due", "stk", "vignette", "insurance", "oil",
+    "approval_request", "approval_decision",
 ]
 
 
@@ -101,6 +112,16 @@ class Vehicle(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="available")
+
+    # Požadavek B: vozidlo, které si nelze prostě vzít. Řidič musí nejdřív
+    # dostat souhlas odpovědné osoby nebo administrátora (TripRequest).
+    # Vozidla bez tohoto příznaku fungují beze změny.
+    approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Požadavek D: "all" = vidí každý, "restricted" = jen odpovědná osoba
+    # a administrátor. Vynucuje se dotazem v repozitáři, ne až v šabloně -
+    # viz app/core/access.py:visible_vehicles_condition.
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="all")
 
     # Public, unguessable identifier the printed QR code encodes
     # (/kniha-jizd/v/<qr_token>) - never the DB primary key, never the
@@ -405,6 +426,22 @@ class Trip(Base):
     distance_diff_percent: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
     distance_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Požadavek A: časy jízdy jdou opravit, ale opravená hodnota se nesmí
+    # tvářit jako původně naměřená. Vyplněné times_edited_at je to, co
+    # odlišuje "takhle to bylo" od "takhle to někdo přepsal"; kompletní
+    # historie změn je v auditu (action="trip_times_edit").
+    times_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    times_edited_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Žádost, na jejímž základě jízda vznikla (vozidla s approval_required).
+    # Unikátní: jedna schválená žádost = nejvýše jedna jízda, což zároveň
+    # brání dvěma souběžným výjezdům na totéž schválení.
+    request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.trip_requests.id", ondelete="SET NULL"), unique=True, nullable=True
+    )
+
     started_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
     )
@@ -437,6 +474,82 @@ class Trip(Base):
         if self.end_odometer_km is None:
             return None
         return self.end_odometer_km - self.start_odometer_km
+
+
+class TripRequest(Base):
+    """Žádost o použití vozidla, které vyžaduje schválení (požadavek B).
+
+    Stavový automat:
+
+        pending  -> approved   (odpovědná osoba nebo administrátor)
+        pending  -> rejected   (odpovědná osoba nebo administrátor)
+        pending  -> cancelled  (žadatel sám, nebo administrátor)
+
+    Čekající žádost sama od sebe nikdy nevyprší - čeká na rozhodnutí, jak
+    dlouho je potřeba. `valid_until` se nastavuje AŽ při schválení a
+    znamená jedinou věc: dokdy se schválení musí proměnit v jízdu, než
+    přestane platit. "Vypršelo" proto není uložený stav (nebyl by kdo ho
+    přepne), ale čtená vlastnost.
+
+    Schválení NENÍ jízda. Že se schválení použilo, se pozná z
+    `Trip.request_id` (unikátní), ne ze stavu na tomhle řádku - a právě
+    ta unikátnost brání dvěma souběžným výjezdům na jedno schválení.
+
+    Řádky se nemažou ani nerecyklují."""
+
+    __tablename__ = "trip_requests"
+    __table_args__ = (
+        # Nejvýše jedna čekající žádost na dvojici (vozidlo, žadatel).
+        # Aplikace to kontroluje taky, kvůli srozumitelné hlášce, ale
+        # záruka při souběhu je tenhle index.
+        Index(
+            "uq_fleet_trip_requests_one_pending", "vehicle_id", "requester_id",
+            unique=True, postgresql_where=text("status = 'pending'"),
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    vehicle_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.vehicles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    requester_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+
+    # Co s vozidlem zamýšlí - aby měl schvalovatel podle čeho rozhodnout.
+    purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    needed_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    needed_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
+    )
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Nastaví se až při schválení - dokdy lze schválení proměnit v jízdu.
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    vehicle: Mapped["Vehicle"] = relationship()
+    requester: Mapped["User"] = relationship(foreign_keys=[requester_id])  # noqa: F821
+    decider: Mapped["User | None"] = relationship(foreign_keys=[decided_by])  # noqa: F821
+
+    @property
+    def is_expired(self) -> bool:
+        """Jen schválená žádost může vypršet. Čekající čeká dál."""
+        if self.status != "approved" or self.valid_until is None:
+            return False
+        return self.valid_until < datetime.now(timezone.utc)
+
+    @property
+    def is_usable(self) -> bool:
+        return self.status == "approved" and not self.is_expired
+
+    @property
+    def is_open(self) -> bool:
+        return self.status == "pending"
 
 
 class TripDriver(Base):

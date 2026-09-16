@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_vehicle.html" import thumb, defect_priority, defect_status %}
+{% block title %}Závady &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-extrabold tracking-tight mb-4">Závady</h1>
+
+<div class="flex flex-wrap gap-2 mb-5">
+  {% for value, caption in [("open", "Nevyřešené"), ("new", "Nové"), ("in_progress", "Řeší se"), ("resolved", "Vyřešené"), ("", "Všechny")] %}
+  <a href="/kniha-jizd/defects?status_filter={{ value }}{% if priority %}&priority={{ priority }}{% endif %}"
+     class="kj-badge px-4 py-2 {% if status_filter == value %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">
+    {{ caption }}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="flex flex-wrap gap-2 mb-5">
+  <a href="/kniha-jizd/defects?status_filter={{ status_filter }}"
+     class="kj-badge px-3 py-1.5 text-xs {% if not priority %}bg-accent text-white{% else %}bg-white text-subtle border border-border2{% endif %}">
+    Všechny priority
+  </a>
+  {% for value in priorities %}
+  <a href="/kniha-jizd/defects?status_filter={{ status_filter }}&priority={{ value }}"
+     class="kj-badge px-3 py-1.5 text-xs {% if priority == value %}bg-accent text-white{% else %}bg-white text-subtle border border-border2{% endif %}">
+    {{ labels.DEFECT_PRIORITY.get(value, value) }}
+  </a>
+  {% endfor %}
+</div>
+
+{% if not defects %}
+<div class="kj-card text-center text-muted2">Žádné závady v tomto výběru. 🎉</div>
+{% endif %}
+
+<div class="grid gap-2">
+  {% for defect in defects %}
+  <a href="/kniha-jizd/defects/{{ defect.id }}"
+     class="kj-card !p-4 flex items-start gap-3 hover:bg-surface
+            {% if defect.priority == 'critical' and defect.is_open %}border-l-4 !border-l-danger{% endif %}">
+    {{ thumb(defect.vehicle, "sm") }}
+    <div class="min-w-0 grow">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-bold">{{ defect.vehicle.license_plate }}</span>
+        {{ defect_priority(defect.priority) }}
+        {{ defect_status(defect.status) }}
+      </div>
+      <p class="text-sm text-subtle mt-1 line-clamp-2">{{ defect.description }}</p>
+      <p class="text-xs text-muted mt-1">
+        {{ defect.reporter.full_name if defect.reporter else "—" }} &middot; {{ defect.reported_at | d }}
+      </p>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

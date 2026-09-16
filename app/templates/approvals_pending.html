@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_vehicle.html" import thumb %}
+{% block title %}Žádosti ke schválení &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-extrabold tracking-tight mb-1">Žádosti ke schválení</h1>
+<p class="text-muted2 mb-5">Žádosti o vozidla, o kterých rozhodujete vy.</p>
+
+{% if not requests %}
+<div class="kj-card text-center text-muted2">Nic nečeká na rozhodnutí. 🎉</div>
+{% endif %}
+
+<div class="grid gap-2">
+  {% for item in requests %}
+  <a href="/kniha-jizd/approvals/{{ item.id }}" class="kj-card !p-4 flex items-start gap-3 hover:bg-surface border-l-4 !border-l-info">
+    {{ thumb(item.vehicle, "sm") }}
+    <div class="min-w-0 grow">
+      <div class="font-bold">{{ item.vehicle.license_plate }}</div>
+      <div class="text-sm text-subtle">{{ item.requester.full_name }}</div>
+      {% if item.purpose %}
+      <div class="text-xs text-muted2 line-clamp-2 mt-1">{{ item.purpose }}</div>
+      {% endif %}
+      {% if item.needed_from %}
+      <div class="text-xs text-muted mt-1">{{ item.needed_from | dt }} – {{ item.needed_to | dt }}</div>
+      {% endif %}
+    </div>
+    <div class="text-right shrink-0">
+      <div class="text-xs text-muted">{{ item.requested_at | d }}</div>
+      <span class="kj-badge bg-info text-white mt-1">Rozhodnout &rarr;</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

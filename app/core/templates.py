@@ -27,6 +27,7 @@ async def render_page(request: Request, name: str, user, db: AsyncSession, *, st
     instead of only the handful of routes that would otherwise compute
     these ad hoc."""
     from app.core.deps import get_user_permission_codes
+    from app.modules.approvals import repository as approvals_repository
     from app.modules.notifications import repository as notifications_repository
 
     codes = await get_user_permission_codes(db, user.id)
@@ -37,6 +38,14 @@ async def render_page(request: Request, name: str, user, db: AsyncSession, *, st
         "can_view_logbook": "fleet.logbook.view" in codes,
         "can_manage_settings": "fleet.settings.manage" in codes,
         "unread_notifications": await notifications_repository.count_unread(db, user.id),
+        # Schvalovatel potřebuje v navigaci vidět, že na něj něco čeká
+        # (požadavek B) - jinak by žádosti ležely, dokud si na ně nevzpomene.
+        "can_decide_requests": bool(
+            {"fleet.vehicle.manage", "fleet.vehicle.manage.own", "fleet.trip.manage"} & codes
+        ),
+        "pending_approvals": await approvals_repository.count_pending_for_decider(
+            db, user_id=user.id, sees_all="fleet.vehicle.manage" in codes,
+        ) if {"fleet.vehicle.manage", "fleet.vehicle.manage.own", "fleet.trip.manage"} & codes else 0,
         # ?flash=<kód> po redirectu z POSTu; neznámý kód se ignoruje.
         "flash": flash_messages.resolve(request.query_params.get("flash")),
     }

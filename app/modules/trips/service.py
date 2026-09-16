@@ -17,9 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import app_settings
 from app.core.audit import log_action
+from app.core.deps import get_user_permission_codes
 from app.core.fuel import level_label
 from app.models.core import User
 from app.models.fleet import TRIP_PURPOSES, Trip, TripDriver, TripNote, Vehicle
+from app.modules.approvals import repository as approvals_repository
+from app.modules.defects import repository as defects_repository
+from app.modules.defects import service as defects_service
+from app.modules.approvals import service as approvals_service
 from app.modules.notifications import service as notifications
 from app.modules.reservations import repository as reservations_repository
 from app.modules.reservations import service as reservations_service
@@ -31,6 +36,11 @@ MODULE = "trips"
 
 class TripError(Exception):
     """Jednoznačně neplatný vstup - jízda se neuloží."""
+
+
+class TripApprovalRequired(TripError):
+    """Vozidlo vyžaduje schválení a žadatel žádné platné nemá. Vlastní typ,
+    aby routa mohla vedle chyby nabídnout rovnou tlačítko „Požádat“."""
 
 
 class TripWarning(Exception):
@@ -55,12 +65,36 @@ async def start_trip(
     if not vehicle.is_active:
         raise TripError("Vozidlo je neaktivní a nelze si ho půjčit.")
 
+    # Požadavek B: vozidlo se schvalováním si nelze prostě vzít. Na rozdíl
+    # od ostatních kontrol tohle NENÍ varování k odklikání - bez platného
+    # schválení jízda prostě nevznikne.
+    codes = await get_user_permission_codes(db, actor.id)
+    approval = None
+    if approvals_service.needs_approval(vehicle, actor, codes):
+        approval = await approvals_repository.get_usable_approval(
+            db, vehicle_id=vehicle.id, requester_id=actor.id,
+        )
+        if approval is None:
+            raise TripApprovalRequired(
+                "Toto vozidlo vyžaduje schválení. Požádejte odpovědnou osobu "
+                "a vyčkejte, než žádost schválí."
+            )
+
     existing = await repository.get_active_trip_for_vehicle(db, vehicle.id)
     if existing is not None:
         raise TripError(
             f"Vozidlo má už otevřenou výpůjčku ({existing.primary_driver.full_name}, "
             f"od {existing.started_at.strftime('%d.%m.%Y %H:%M')}). Nejdřív ji ukončete."
         )
+
+    # Kritická nevyřešená závada jízdu NEBLOKUJE (zadání 16 to nežádá -
+    # auto se musí dát odvézt do servisu), ale řidič ji musí vidět a
+    # potvrdit, že o ní ví.
+    if "critical_defect" not in confirmations:
+        open_defects = await defects_repository.list_for_vehicle(db, vehicle.id, open_only=True)
+        warning_text = defects_service.critical_warning_text(open_defects)
+        if warning_text:
+            raise TripWarning("critical_defect", warning_text)
 
     # Vozidlo v servisu / mimo provoz se nezakazuje natvrdo - může jít o
     # nutnou jízdu do servisu. Ale řidič to musí vidět a potvrdit.
@@ -96,6 +130,7 @@ async def start_trip(
         start_odometer_km=start_odometer_km,
         start_fuel_level=start_fuel_level,
         status="active",
+        request_id=approval.id if approval else None,
         reservation_id=own_reservation.id if own_reservation else None,
         # Potvrzení přejezdu cizí rezervace zůstává v historii jízdy
         # (zadání 10: „Potvrzení uložit do historie").
@@ -107,6 +142,8 @@ async def start_trip(
 
     if own_reservation is not None:
         await reservations_service.mark_fulfilled(db, own_reservation)
+    if approval is not None:
+        await approvals_service.consume_for_trip(db, request=approval, trip_id=trip.id)
 
     # Fotka tachometru je důkazní podklad k té jízdě - zapisuje se ve
     # stejné transakci, aby nemohla vzniknout jízda bez ní ani fotka bez
@@ -125,6 +162,7 @@ async def start_trip(
         after_data={
             "vehicle_id": str(vehicle.id), "start_odometer_km": start_odometer_km,
             "start_fuel_level": start_fuel_level, "confirmations": sorted(confirmations),
+            "request_id": str(approval.id) if approval else None,
             "reservation_id": str(own_reservation.id) if own_reservation else None,
             "reservation_conflict_id": str(conflicting.id) if conflicting else None,
         },
@@ -227,6 +265,74 @@ async def _attach_odometer_photo(
         db, vehicle_id=vehicle_id, kind=kind, original_filename=filename, content_type=content_type,
         data=data, actor_id=actor_id, trip_id=trip_id, commit=False,
     )
+
+
+# --- úprava časů jízdy (požadavek A) -----------------------------------
+
+async def edit_times(
+    db: AsyncSession, *, trip: Trip, actor: User, started_at: datetime, ended_at: datetime | None,
+    reason: str, confirmations: set[str],
+) -> Trip:
+    """Oprava data a času jízdy.
+
+    Časy se opravují běžně (řidič zapomněl jízdu ukončit, telefon byl bez
+    signálu), ale opravená hodnota se nesmí tvářit jako původně naměřená -
+    proto se vyplní `times_edited_at`/`times_edited_by` a stará i nová
+    hodnota jde do auditu.
+
+    Tvrdě se odmítá jen to, co nedává smysl (konec před začátkem, jízda v
+    budoucnosti). Překryv s rezervací nebo s jinou jízdou téhož vozidla je
+    podezřelý, ale může být správný - na ten se jen upozorní (zadání 32).
+    """
+    if not reason.strip():
+        raise TripError("Zdůvodnění opravy časů je povinné.")
+    if trip.status == "cancelled":
+        raise TripError("U zrušené jízdy se časy neupravují.")
+    if ended_at is not None and ended_at <= started_at:
+        raise TripError("Konec jízdy musí být později než její začátek.")
+    if trip.status == "completed" and ended_at is None:
+        raise TripError("U uzavřené jízdy musí zůstat vyplněný čas ukončení.")
+
+    now = datetime.now(timezone.utc)
+    if started_at > now or (ended_at is not None and ended_at > now):
+        raise TripError("Čas jízdy nemůže být v budoucnosti.")
+
+    # Překryv s jinou jízdou téhož vozidla - typicky známka toho, že se
+    # oprava trefila do cizí jízdy. Nezakazuje se, ale musí se potvrdit.
+    if "trip_overlap" not in confirmations:
+        clash = await repository.find_overlapping_trip(
+            db, vehicle_id=trip.vehicle_id, trip_id=trip.id, start=started_at, end=ended_at or now,
+        )
+        if clash is not None:
+            raise TripWarning(
+                "trip_overlap",
+                f"Zadané časy se překrývají s jinou jízdou tohoto vozidla "
+                f"({clash.primary_driver.full_name}, {clash.started_at.strftime('%d.%m.%Y %H:%M')}).",
+            )
+
+    before = {
+        "started_at": trip.started_at.isoformat(),
+        "ended_at": trip.ended_at.isoformat() if trip.ended_at else None,
+    }
+    trip.started_at = started_at
+    trip.ended_at = ended_at
+    trip.times_edited_at = now
+    trip.times_edited_by = actor.id
+    db.add(TripNote(trip_id=trip.id, author_id=actor.id, text=f"Oprava časů jízdy: {reason.strip()}"))
+    await db.flush()
+
+    await log_action(
+        db, user_id=actor.id, action="trip_times_edit", module=MODULE, entity_type="trip",
+        entity_id=str(trip.id), before_data=before,
+        after_data={
+            "started_at": started_at.isoformat(),
+            "ended_at": ended_at.isoformat() if ended_at else None,
+            "reason": reason.strip(),
+            "confirmations": sorted(confirmations),
+        },
+    )
+    await db.commit()
+    return await repository.get_trip(db, trip.id)
 
 
 # --- další řidiči (zadání 12) -----------------------------------------

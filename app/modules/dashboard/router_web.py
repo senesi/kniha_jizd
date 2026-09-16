@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import app_settings
+from app.core.access import visible_vehicles_condition
 from app.core.db import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_user_permission_codes
 from app.core.fleet_status import vehicle_deadlines
 from app.core.templates import render_page
 from app.models.core import User
@@ -25,7 +26,10 @@ async def dashboard(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    vehicles = await vehicles_repository.list_vehicles(db)
+    codes = await get_user_permission_codes(db, user.id)
+    vehicles = await vehicles_repository.list_vehicles(
+        db, visible_to=visible_vehicles_condition(codes, user)
+    )
     thresholds = await app_settings.get_all(db)
 
     active = [v for v in vehicles if v.is_active]

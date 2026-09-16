@@ -7,12 +7,13 @@ hodnotu, než jakou člověk napsal, nebo je údaj podezřelý (zadání 32:
 raději upozornit a vyžádat potvrzení než tvrdě blokovat).
 """
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash, ocr
-from app.core.access import MANAGE_ANY
+from app.core.access import MANAGE_ANY, assert_vehicle_visible
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, get_user_permission_codes, require_permission
@@ -20,6 +21,7 @@ from app.core.photos import PhotoTooLarge, UnsupportedPhotoType
 from app.core.templates import render_page
 from app.models.core import User
 from app.models.fleet import TRIP_PURPOSES, Trip, Vehicle
+from app.modules.reservations.calendar import LOCAL_TZ
 from app.modules.trips import repository, service
 from app.modules.vehicles import repository as vehicles_repository
 from app.modules.vehicles import service as vehicles_service
@@ -33,10 +35,13 @@ MANAGE = "fleet.trip.manage"
 
 # --- pomocné ----------------------------------------------------------
 
-async def _load_vehicle(db: AsyncSession, vehicle_id: uuid.UUID) -> Vehicle:
+async def _load_vehicle(db: AsyncSession, vehicle_id: uuid.UUID, *, user: User) -> Vehicle:
+    """Zahájit jízdu lze jen s vozidlem, které uživatel vůbec smí vidět
+    (požadavek D) - jinak by skryté vozidlo šlo vzít přímým odkazem."""
     vehicle = await vehicles_repository.get_vehicle(db, vehicle_id)
     if vehicle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vozidlo nebylo nalezeno.")
+    assert_vehicle_visible(await get_user_permission_codes(db, user.id), vehicle, user)
     return vehicle
 
 
@@ -114,7 +119,7 @@ async def trip_start_form(
     user: User = Depends(require_permission(CREATE)),
     db: AsyncSession = Depends(get_db),
 ):
-    vehicle = await _load_vehicle(db, vehicle_id)
+    vehicle = await _load_vehicle(db, vehicle_id, user=user)
     active = await repository.get_active_trip_for_vehicle(db, vehicle.id)
     if active is not None:
         return flash.redirect(f"/kniha-jizd/trips/{active.id}")
@@ -134,7 +139,7 @@ async def trip_start(
     user: User = Depends(require_permission(CREATE)),
     db: AsyncSession = Depends(get_db),
 ):
-    vehicle = await _load_vehicle(db, vehicle_id)
+    vehicle = await _load_vehicle(db, vehicle_id, user=user)
     form = await request.form()
     start_km = _to_int(form.get("start_odometer_km"))
     fuel_level = _to_int(form.get("start_fuel_level"))
@@ -177,6 +182,10 @@ async def trip_start(
         )
     except service.TripWarning as warning:
         return await rerender(None, [warning], status_code=200)
+    except service.TripApprovalRequired as error:
+        # Vozidlo vyžaduje schválení - vrátit řidiče na kartu vozidla, kde
+        # je formulář žádosti, ne ho nechat na slepém formuláři jízdy.
+        return flash.redirect(f"/kniha-jizd/vehicles/{vehicle.id}", "approval_needed")
     except service.TripError as error:
         return await rerender(str(error), [])
     except (PhotoTooLarge, UnsupportedPhotoType) as error:
@@ -371,3 +380,81 @@ async def trip_cancel(
     except service.TripError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return flash.redirect(f"/kniha-jizd/trips/{trip.id}", "trip_cancelled")
+
+
+# --- úprava časů jízdy (požadavek A) ------------------------------------
+
+def _parse_local_dt(raw) -> datetime | None:
+    """<input type="datetime-local"> posílá čas bez zóny - doplní se
+    provozní, aby se uložil správný okamžik."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        naive = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return naive.replace(tzinfo=LOCAL_TZ) if naive.tzinfo is None else naive
+
+
+async def _assert_can_edit_times(db: AsyncSession, trip: Trip, actor: User) -> None:
+    """Časy opravuje ten, kdo jel, nebo správce vozidla či jízd. Stejný
+    okruh jako u ukončení jízdy - kdo ji smí zavřít, smí i opravit, kdy
+    se to stalo."""
+    await _assert_can_end(db, trip, actor)
+
+
+@trips_router.get("/trips/{trip_id}/times")
+async def trip_times_form(
+    request: Request,
+    trip_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    trip = await _load_trip(db, trip_id)
+    await _assert_can_edit_times(db, trip, user)
+    return await render_page(
+        request, "trip_times_edit.html", user, db,
+        trip=trip, vehicle=trip.vehicle, error=None, warnings=[], form={},
+    )
+
+
+@trips_router.post("/trips/{trip_id}/times", dependencies=[Depends(verify_csrf)])
+async def trip_times_edit(
+    request: Request,
+    trip_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    trip = await _load_trip(db, trip_id)
+    await _assert_can_edit_times(db, trip, user)
+
+    form = await request.form()
+    payload = {
+        "started_at": str(form.get("started_at") or ""),
+        "ended_at": str(form.get("ended_at") or ""),
+        "reason": str(form.get("reason") or ""),
+    }
+
+    async def rerender(error, warnings, status_code=400):
+        return await render_page(
+            request, "trip_times_edit.html", user, db, status_code=status_code,
+            trip=trip, vehicle=trip.vehicle, error=error, warnings=warnings, form=payload,
+        )
+
+    started_at = _parse_local_dt(payload["started_at"])
+    if started_at is None:
+        return await rerender("Zadejte datum a čas zahájení.", [])
+
+    try:
+        await service.edit_times(
+            db, trip=trip, actor=user, started_at=started_at,
+            ended_at=_parse_local_dt(payload["ended_at"]), reason=payload["reason"],
+            confirmations=_confirmations(form),
+        )
+    except service.TripWarning as warning:
+        return await rerender(None, [warning], status_code=200)
+    except service.TripError as error:
+        return await rerender(str(error), [])
+
+    return flash.redirect(f"/kniha-jizd/trips/{trip.id}", "trip_times_edited")

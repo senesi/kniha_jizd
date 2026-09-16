@@ -14,7 +14,14 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import app_settings, flash
-from app.core.access import MANAGE_ANY, MANAGE_OWN, assert_vehicle_manage_access, can_manage_vehicle
+from app.core.access import (
+    MANAGE_ANY,
+    MANAGE_OWN,
+    assert_vehicle_manage_access,
+    assert_vehicle_visible,
+    can_manage_vehicle,
+    visible_vehicles_condition,
+)
 from app.core.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
@@ -23,6 +30,9 @@ from app.core.fleet_status import vehicle_deadlines, worst_level
 from app.core.templates import render_page
 from app.models.core import User
 from app.models.fleet import FUEL_TYPES, VEHICLE_STATUSES, VEHICLE_TYPES, Vehicle
+from app.modules.approvals import repository as approvals_repository
+from app.modules.approvals import service as approvals_service
+from app.modules.defects import repository as defects_repository
 from app.modules.trips import repository as trips_repository
 from app.modules.vehicles import repository, service
 from app.modules.vehicles.schemas import VehicleCreate, VehicleUpdate
@@ -37,10 +47,16 @@ CREATE = "fleet.vehicle.create"
 
 # --- pomocné ---------------------------------------------------------
 
-async def _load_vehicle(db: AsyncSession, vehicle_id: uuid.UUID) -> Vehicle:
+async def _load_vehicle(
+    db: AsyncSession, vehicle_id: uuid.UUID, *, codes: set[str] | None = None, user: User | None = None,
+) -> Vehicle:
+    """Načte vozidlo a - když dostane, kdo se ptá - rovnou ověří, že ho
+    ten člověk vůbec smí vidět (požadavek D)."""
     vehicle = await repository.get_vehicle(db, vehicle_id)
     if vehicle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vozidlo nebylo nalezeno.")
+    if codes is not None and user is not None:
+        assert_vehicle_visible(codes, vehicle, user)
     return vehicle
 
 
@@ -91,6 +107,8 @@ async def _form_payload(request: Request) -> dict:
         "responsible_user_id": _to_uuid(get("responsible_user_id")),
         "status": get("status") or "available",
         "is_active": get("is_active") is not None,
+        "approval_required": get("approval_required") is not None,
+        "visibility": get("visibility") or "all",
         "stk_valid_until": _to_date(get("stk_valid_until")),
         "vignette_valid_until": _to_date(get("vignette_valid_until")),
         "insurance_company": _blank_to_none(get("insurance_company")),
@@ -128,7 +146,7 @@ async def vehicles_list(
     vehicles = (
         await repository.list_vehicles_for_responsible_user(db, user.id)
         if only == "mine"
-        else await repository.list_vehicles(db)
+        else await repository.list_vehicles(db, visible_to=visible_vehicles_condition(codes, user))
     )
     rows = [
         {
@@ -190,8 +208,8 @@ async def vehicle_detail(
     user: User = Depends(require_permission(VIEW)),
     db: AsyncSession = Depends(get_db),
 ):
-    vehicle = await _load_vehicle(db, vehicle_id)
     codes = await get_user_permission_codes(db, user.id)
+    vehicle = await _load_vehicle(db, vehicle_id, codes=codes, user=user)
     thresholds = await app_settings.get_all(db)
     return await render_page(
         request, "vehicle_detail.html", user, db,
@@ -204,6 +222,19 @@ async def vehicle_detail(
         active_trip=await trips_repository.get_active_trip_for_vehicle(db, vehicle.id),
         recent_trips=await trips_repository.list_trips_for_vehicle(db, vehicle.id, limit=5),
         can_start_trip="fleet.trip.create" in codes,
+        # Otevřené závady se ukazují hned u stavu vozidla - řidič, který
+        # k autu přijde, je musí vidět dřív, než vyjede (zadání 7/16).
+        open_defects=await defects_repository.list_for_vehicle(db, vehicle.id, open_only=True),
+        # Schvalování (požadavek B): buď má řidič platné schválení, nebo
+        # čekající žádost, nebo se mu nabídne formulář.
+        needs_approval=approvals_service.needs_approval(vehicle, user, codes),
+        my_approval=await approvals_repository.get_usable_approval(
+            db, vehicle_id=vehicle.id, requester_id=user.id,
+        ),
+        my_pending_request=await approvals_repository.get_pending_for(
+            db, vehicle_id=vehicle.id, requester_id=user.id,
+        ),
+        can_report_defect="fleet.defect.report" in codes,
     )
 
 
@@ -338,6 +369,10 @@ async def qr_landing(
     vehicle = await repository.get_vehicle_by_qr_token(db, qr_token)
     if vehicle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Neplatný QR kód vozidla.")
+    # Nálepka na autě nesmí obejít viditelnost (požadavek D): kdo vozidlo
+    # nevidí v seznamu, nedostane se k němu ani načtením QR kódu.
+    codes = await get_user_permission_codes(db, user.id)
+    assert_vehicle_visible(codes, vehicle, user)
     return RedirectResponse(url=f"/kniha-jizd/vehicles/{vehicle.id}", status_code=303)
 
 

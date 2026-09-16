@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Nahlásit závadu &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% block content %}
+{# Nahlášení musí jít z telefonu u auta na tři doteky: napsat, vybrat
+   prioritu, odeslat. Fotka je nepovinná. #}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Nahlásit závadu</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/defects/new" enctype="multipart/form-data">
+  {{ csrf_field(request) }}
+  {% if trip_id %}<input type="hidden" name="trip_id" value="{{ trip_id }}">{% endif %}
+
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Co je špatně? <span class="text-danger">*</span></label>
+    <textarea class="kj-input" name="description" rows="4" required autofocus
+              placeholder="např. praskly stěrače, netěsní levé přední kolo">{{ form.get('description', '') }}</textarea>
+
+    <label class="kj-label">Priorita <span class="text-danger">*</span></label>
+    {% set chosen = form.get('priority') or 'normal' %}
+    <div class="grid grid-cols-2 gap-2">
+      {% for priority in priorities %}
+      {% set styles = {
+        "low": "has-[:checked]:border-muted has-[:checked]:bg-surface",
+        "normal": "has-[:checked]:border-warning has-[:checked]:bg-warning/10",
+        "high": "has-[:checked]:border-danger has-[:checked]:bg-danger/10",
+        "critical": "has-[:checked]:border-danger has-[:checked]:bg-danger has-[:checked]:text-white",
+      } %}
+      <label class="flex items-center gap-2 rounded-xl border border-border2 bg-white px-3 py-3 cursor-pointer hover:bg-surface {{ styles.get(priority, '') }}">
+        <input type="radio" name="priority" value="{{ priority }}" required
+               class="w-5 h-5 text-accent focus:ring-accent"
+               {% if priority == chosen %}checked{% endif %}>
+        <span class="text-sm font-bold">{{ labels.DEFECT_PRIORITY.get(priority, priority) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="text-xs text-muted mt-2">
+      Kritická závada neblokuje jízdu, ale dalšímu řidiči se zobrazí jako výrazné upozornění.
+    </p>
+
+    <label class="kj-label">Fotografie závady</label>
+    <input class="kj-input !py-3" type="file" name="photo" accept="image/*" capture="environment">
+    <p class="text-xs text-muted mt-1">Nepovinné. Další fotky lze přidat i potom.</p>
+  </div>
+
+  <button type="submit" class="kj-btn-hero">Nahlásit závadu</button>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="kj-btn-secondary w-full mt-2">Zrušit</a>
+</form>
+{% endblock %}

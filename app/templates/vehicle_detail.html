@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import deadline_row, status_badge %}
+{% from "_vehicle.html" import thumb, visibility_badge, approval_badge, defect_priority, defect_status %}
 {% block title %}{{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -7,15 +8,37 @@
    co je to za vozidlo, v jakém je stavu, jaké má termíny, jestli na něm
    něco není. Administrativa až pod tím. #}
 <div class="flex items-start justify-between gap-3 mb-4">
-  <div class="min-w-0">
-    <div class="flex items-center gap-2 flex-wrap">
-      <h1 class="text-2xl font-extrabold tracking-tight">{{ vehicle.license_plate }}</h1>
-      {{ status_badge(vehicle) }}
+  <div class="flex items-start gap-3 min-w-0">
+    {{ thumb(vehicle, "lg") }}
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-2xl font-extrabold tracking-tight">{{ vehicle.license_plate }}</h1>
+        {{ status_badge(vehicle) }}
+      </div>
+      <p class="text-muted2">{{ vehicle.internal_code }} &middot; {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.year_of_manufacture %} ({{ vehicle.year_of_manufacture }}){% endif %}</p>
+      <div class="flex flex-wrap gap-1 mt-1">
+        {{ visibility_badge(vehicle) }}
+        {{ approval_badge(vehicle) }}
+      </div>
     </div>
-    <p class="text-muted2">{{ vehicle.internal_code }} &middot; {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.year_of_manufacture %} ({{ vehicle.year_of_manufacture }}){% endif %}</p>
   </div>
   <a href="/kniha-jizd/vehicles" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
 </div>
+
+{# Kritická závada patří úplně nahoru - dřív než cokoliv jiného. #}
+{% set critical = open_defects | selectattr("priority", "equalto", "critical") | list %}
+{% if critical %}
+<div class="rounded-2xl bg-danger/10 border-2 border-danger/50 p-4 mb-4">
+  <p class="text-sm font-extrabold text-danger">⚠️ Vozidlo má nevyřešenou kritickou závadu</p>
+  <ul class="mt-2 space-y-1">
+    {% for defect in critical %}
+    <li class="text-sm text-subtle">
+      <a href="/kniha-jizd/defects/{{ defect.id }}" class="hover:underline">{{ defect.description }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 {# Hlavní akce hned pod hlavičkou: řidič, který přišel od QR kódu, sem
    chodí kvůli jediné věci (zadání 7/28). #}
@@ -32,7 +55,42 @@
   </div>
   <a href="/kniha-jizd/trips/{{ active_trip.id }}" class="kj-btn w-full mt-3">Otevřít probíhající jízdu</a>
 </div>
+{% elif needs_approval and not my_approval %}
+{# Požadavek B: bez schválení se jízda nezahájí. Místo mrtvého tlačítka
+   rovnou formulář žádosti, ať to řidič vyřídí na jednu obrazovku. #}
+<div class="kj-card mb-4 border-l-4 !border-l-info">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-1">Vozidlo vyžaduje schválení</h2>
+  {% if my_pending_request %}
+  <p class="text-sm text-subtle">
+    Vaše žádost čeká na rozhodnutí odpovědné osoby.
+  </p>
+  <a href="/kniha-jizd/approvals/{{ my_pending_request.id }}" class="kj-btn-secondary w-full mt-3">Zobrazit žádost</a>
+  {% else %}
+  <p class="text-sm text-subtle mb-2">Napište, k čemu vozidlo potřebujete – odpovědná osoba dostane upozornění.</p>
+  <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/request">
+    {{ csrf_field(request) }}
+    <label class="kj-label mt-0">Účel</label>
+    <input class="kj-input" name="purpose" maxlength="500" placeholder="např. montáž Zlatá Olešnice, celý den">
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Od (nepovinné)</label>
+        <input class="kj-input" type="datetime-local" name="needed_from">
+      </div>
+      <div>
+        <label class="kj-label">Do (nepovinné)</label>
+        <input class="kj-input" type="datetime-local" name="needed_to">
+      </div>
+    </div>
+    <button type="submit" class="kj-btn w-full mt-4">Požádat o vozidlo</button>
+  </form>
+  {% endif %}
+</div>
 {% elif can_start_trip and vehicle.is_active %}
+{% if my_approval %}
+<div class="rounded-xl bg-success/10 border border-success/30 px-4 py-3 mb-3 text-sm font-semibold text-success">
+  Máte schválení{% if my_approval.valid_until %} (platí do {{ my_approval.valid_until | dt }}){% endif %}.
+</div>
+{% endif %}
 <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/trips/start" class="kj-btn-hero mb-4">Zahájit výpůjčku</a>
 {% elif not vehicle.is_active %}
 <div class="rounded-2xl bg-muted/10 border border-divider p-4 mb-4 text-sm font-semibold text-muted2">
@@ -150,6 +208,40 @@
   </div>
   {% else %}
   <p class="text-sm text-muted">Žádné fotografie.</p>
+  {% endif %}
+</div>
+
+<!-- Závady -->
+<div class="kj-card mb-4">
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Nevyřešené závady</h2>
+    {% if can_report_defect %}
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/defects/new" class="kj-btn-secondary !min-h-[36px] !px-3 !text-sm">
+      Nahlásit závadu
+    </a>
+    {% endif %}
+  </div>
+  {% if open_defects %}
+  <ul class="divide-y divide-divider-soft">
+    {% for defect in open_defects %}
+    <li>
+      <a href="/kniha-jizd/defects/{{ defect.id }}" class="flex items-start justify-between gap-3 py-2.5 hover:text-accent">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold line-clamp-2">{{ defect.description }}</div>
+          <div class="text-xs text-muted2">
+            {{ defect.reporter.full_name if defect.reporter else "—" }} &middot; {{ defect.reported_at | d }}
+          </div>
+        </div>
+        <div class="flex flex-col items-end gap-1 shrink-0">
+          {{ defect_priority(defect.priority) }}
+          {{ defect_status(defect.status) }}
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-muted">Žádné nevyřešené závady.</p>
   {% endif %}
 </div>
 

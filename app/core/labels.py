@@ -98,6 +98,20 @@ NOTIFICATION_KIND: dict[str, str] = {
     "vignette": "Dálniční známka",
     "insurance": "Pojištění",
     "oil": "Výměna oleje",
+    "approval_request": "Žádost o schválení",
+    "approval_decision": "Rozhodnutí o žádosti",
+}
+
+TRIP_REQUEST_STATUS: dict[str, str] = {
+    "pending": "Čeká na schválení",
+    "approved": "Schváleno",
+    "rejected": "Zamítnuto",
+    "cancelled": "Staženo",
+}
+
+VEHICLE_VISIBILITY: dict[str, str] = {
+    "all": "Viditelné všem",
+    "restricted": "Jen odpovědná osoba a administrátor",
 }
 
 ROLE: dict[str, str] = {

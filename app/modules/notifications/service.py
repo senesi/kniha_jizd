@@ -142,6 +142,80 @@ async def notify_defect_reported(db: AsyncSession, *, vehicle: Vehicle, defect, 
     )
 
 
+async def notify_approval_requested(db: AsyncSession, *, vehicle: Vehicle, request, actor: User, commit: bool = True):
+    """Žádost o schválení musí dorazit tomu, kdo o ní rozhoduje.
+
+    Odpovědná osoba ani administrátor o vlastní vozidlo nežádají (viz
+    approvals/service.py:needs_approval), takže tady nehrozí, že by si
+    někdo posílal upozornění sám sobě."""
+    period = ""
+    if request.needed_from:
+        period = f"\nOd: {request.needed_from.strftime('%d.%m.%Y %H:%M')}"
+        if request.needed_to:
+            period += f"\nDo: {request.needed_to.strftime('%d.%m.%Y %H:%M')}"
+    return await _notify_responsible(
+        db, vehicle=vehicle, actor_id=actor.id, kind="approval_request",
+        title=f"Žádost o použití vozidla – {_vehicle_label(vehicle)}",
+        body=(
+            f"{actor.full_name} žádá o použití vozidla {_vehicle_label(vehicle)}"
+            f"{period}\nÚčel: {request.purpose or '-'}"
+        ),
+        link_url=f"{BASE_PATH}/approvals/{request.id}",
+        commit=commit,
+    )
+
+
+async def notify_approval_decided(db: AsyncSession, *, request, actor: User, commit: bool = True):
+    """Výsledek jde žadateli - ten se musí dozvědět, jestli může jet."""
+    approved = request.status == "approved"
+    result = await db.execute(
+        select(User).where(User.id == request.requester_id, User.is_active.is_(True))
+    )
+    requester = result.scalar_one_or_none()
+    if requester is None or requester.id == actor.id:
+        return None
+
+    label = _vehicle_label(request.vehicle)
+    verb = "schválil(a)" if approved else "zamítl(a)"
+    body = f"{actor.full_name} {verb} vaši žádost o vozidlo {label}."
+    if approved and request.valid_until:
+        body += f"\nVýpůjčku zahajte do {request.valid_until.strftime('%d.%m.%Y %H:%M')}."
+    if request.decision_note:
+        body += f"\n\n{request.decision_note}"
+
+    return await create(
+        db, user=requester, vehicle=request.vehicle, kind="approval_decision",
+        title=f"Žádost {'schválena' if approved else 'zamítnuta'} – {label}",
+        body=body, link_url=f"{BASE_PATH}/approvals/{request.id}", commit=commit,
+    )
+
+
+DEFECT_STATUS_WORDS = {"new": "nová", "in_progress": "řeší se", "resolved": "vyřešena"}
+
+
+async def notify_defect_status_changed(db: AsyncSession, *, defect, actor: User, commit: bool = True):
+    """Změnu stavu závady hlásíme tomu, kdo ji nahlásil - jeho se týká
+    nejvíc, a odpovědná osoba ji obvykle mění sama."""
+    result = await db.execute(
+        select(User).where(User.id == defect.reported_by, User.is_active.is_(True))
+    )
+    reporter = result.scalar_one_or_none()
+    if reporter is None or reporter.id == actor.id:
+        return None
+
+    word = DEFECT_STATUS_WORDS.get(defect.status, defect.status)
+    label = _vehicle_label(defect.vehicle)
+    body = f"{actor.full_name} změnil(a) stav vaší závady na „{word}“.\n\n{defect.description}"
+    if defect.resolution_note:
+        body += f"\n\nŘešení: {defect.resolution_note}"
+
+    return await create(
+        db, user=reporter, vehicle=defect.vehicle, kind="defect",
+        title=f"Závada: {word} – {label}",
+        body=body, link_url=f"{BASE_PATH}/defects/{defect.id}", commit=commit,
+    )
+
+
 async def mark_read(db: AsyncSession, notification: Notification) -> None:
     if notification.read_at is None:
         notification.read_at = datetime.now(timezone.utc)

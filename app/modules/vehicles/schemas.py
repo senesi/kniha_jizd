@@ -3,7 +3,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.fleet import FUEL_TYPES, VEHICLE_STATUSES, VEHICLE_TYPES
+from app.models.fleet import FUEL_TYPES, VEHICLE_STATUSES, VEHICLE_TYPES, VEHICLE_VISIBILITIES
 
 
 class VehicleBase(BaseModel):
@@ -20,6 +20,8 @@ class VehicleBase(BaseModel):
     responsible_user_id: uuid.UUID | None = None
     status: str = "available"
     is_active: bool = True
+    approval_required: bool = False
+    visibility: str = "all"
     stk_valid_until: date | None = None
     vignette_valid_until: date | None = None
     insurance_company: str | None = Field(default=None, max_length=255)
@@ -43,6 +45,13 @@ class VehicleBase(BaseModel):
     def _valid_status(cls, value: str) -> str:
         if value not in VEHICLE_STATUSES:
             raise ValueError(f"Neplatný stav vozidla: {value}")
+        return value
+
+    @field_validator("visibility")
+    @classmethod
+    def _valid_visibility(cls, value: str) -> str:
+        if value not in VEHICLE_VISIBILITIES:
+            raise ValueError(f"Neplatná viditelnost vozidla: {value}")
         return value
 
     @field_validator("fuel_type")

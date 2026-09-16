@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import dot, status_badge %}
+{% from "_vehicle.html" import thumb %}
 {% block title %}Přehled &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -80,8 +81,9 @@
   <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Moje zodpovědnost</h2>
   <div class="grid sm:grid-cols-2 gap-2">
     {% for vehicle in my_vehicles %}
-    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface">
-      <div class="min-w-0">
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="kj-card !p-4 flex items-center gap-3 hover:bg-surface">
+      {{ thumb(vehicle, "sm") }}
+      <div class="min-w-0 grow">
         <div class="font-extrabold truncate">{{ vehicle.license_plate }}</div>
         <div class="text-xs text-muted2 truncate">{{ vehicle.brand }} {{ vehicle.model }} &middot; {{ vehicle.current_odometer_km | km }} km</div>
       </div>
