@@ -95,9 +95,10 @@ uživatele, ne pro Claude Code.
   `/` → `:8000` (DSS, který slouží jako rozcestník)
 - `webrtc.azunimb.cz` — samostatný server blok
 
-> **WordPress na tomto serveru neběží.** V zadání bývá zmiňovaný, ale
-> audit žádný WordPress kontejner ani nginx root nenašel. Až vznikne,
-> je potřeba tuhle tabulku doplnit.
+> **WordPress zatím neběží** — je plánovaný na později (potvrzeno
+> 17. 9. 2026). Audit žádný WordPress kontejner ani nginx root nenašel.
+> Až vznikne, doplnit do tabulky výše; deploye Knihy jízd se to netýká,
+> jen je pak potřeba počítat s další routou v nginx.
 
 **Ověřeno, že Kniha jízd s ničím nekoliduje:** adresář
 `/opt/kniha_jizd` neexistuje, názvy `kniha-jizd-*` nejsou obsazené,
