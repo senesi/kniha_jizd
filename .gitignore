@@ -11,3 +11,7 @@ _local_data/
 
 # Log lokálně spuštěného uvicornu (nikdy do Gitu)
 .tmp_server.log
+
+# Vstupní podklady k vozidlům (pojistky, TP, fotky) - reálná firemní
+# data, do repozitáře zdrojového kódu nepatří.
+input/
