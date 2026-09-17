@@ -245,6 +245,63 @@
   {% endif %}
 </div>
 
+<!-- Servis a dokumenty (zadání 17/18) -->
+<div class="grid sm:grid-cols-2 gap-3 mb-4">
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/services"
+     class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface">
+    <div class="min-w-0">
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Servisní historie</div>
+      <div class="text-lg font-extrabold">
+        {{ service_totals.count }} {% if service_totals.count == 1 %}úkon{% elif service_totals.count < 5 %}úkony{% else %}úkonů{% endif %}
+      </div>
+      {% if service_totals.price %}
+      <div class="text-xs text-muted2">{{ service_totals.price | money }} Kč celkem</div>
+      {% endif %}
+    </div>
+    <span class="text-accent font-bold shrink-0">&rarr;</span>
+  </a>
+
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/documents"
+     class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface">
+    <div class="min-w-0">
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Dokumenty</div>
+      <div class="text-lg font-extrabold">
+        {{ documents | length }} {% if documents | length == 1 %}dokument{% elif documents | length < 5 %}dokumenty{% else %}dokumentů{% endif %}
+      </div>
+      <div class="text-xs text-muted2">TP, OTP, zelená karta…</div>
+    </div>
+    <span class="text-accent font-bold shrink-0">&rarr;</span>
+  </a>
+</div>
+
+{% if last_services %}
+<div class="kj-card mb-4">
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Poslední servis</h2>
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/services" class="text-xs text-accent hover:underline">vše</a>
+  </div>
+  <ul class="divide-y divide-divider-soft">
+    {% for record in last_services[:3] %}
+    <li class="flex items-start justify-between gap-3 py-2">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold">
+          {{ labels.SERVICE_TYPE.get(record.service_type, record.service_type) }}
+        </div>
+        <div class="text-xs text-muted2 truncate">
+          {{ record.service_date | d }}
+          {% if record.odometer_km %} &middot; {{ record.odometer_km | km }} km{% endif %}
+          {% if record.supplier %} &middot; {{ record.supplier }}{% endif %}
+        </div>
+      </div>
+      {% if record.price_czk %}
+      <div class="text-sm font-bold shrink-0">{{ record.price_czk | money }} Kč</div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <!-- Tankování / nabíjení -->
 {% if recent_fuelings or fueling_totals %}
 <div class="kj-card mb-4">

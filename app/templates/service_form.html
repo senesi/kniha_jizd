@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_macros.html" import warning_box %}
+{% block title %}Nový servisní úkon &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% macro value_of(name) %}{{ form.get(name) if form.get(name) is not none else '' }}{% endmacro %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Nový servisní úkon</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/services" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/services/new" enctype="multipart/form-data">
+  {{ csrf_field(request) }}
+  {{ warning_box(warnings) }}
+
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Typ úkonu <span class="text-danger">*</span></label>
+    {% set chosen = form.get('service_type') %}
+    <div class="grid grid-cols-2 gap-2">
+      {% for option in service_types %}
+      <label class="flex items-center gap-2 rounded-xl border border-border2 bg-white px-3 py-2.5 cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5">
+        <input type="radio" name="service_type" value="{{ option }}" required
+               class="w-4 h-4 text-accent focus:ring-accent"
+               data-service-type="{{ option }}"
+               {% if option == chosen %}checked{% endif %}>
+        <span class="text-sm font-bold">{{ labels.SERVICE_TYPE.get(option, option) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Datum <span class="text-danger">*</span></label>
+        <input class="kj-input" type="date" name="service_date" required value="{{ value_of('service_date') }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav tachometru (km)</label>
+        <input class="kj-input" type="number" min="0" name="odometer_km" value="{{ value_of('odometer_km') }}">
+        <p class="text-xs text-muted mt-1">Aktuální stav vozidla: {{ vehicle.current_odometer_km | km }} km</p>
+      </div>
+    </div>
+
+    <label class="kj-label">Popis úkonu <span class="text-danger">*</span></label>
+    <textarea class="kj-input" name="description" rows="3" required
+              placeholder="co se dělalo, jaké díly">{{ value_of('description') }}</textarea>
+
+    {# Uzavření smyčky mezi servisní knihou a semaforem na kartě vozidla:
+       bez toho by byl olej vyměněný a semafor by dál svítil oranžově. #}
+    <label id="oil-box" class="flex items-start gap-2 mt-4 cursor-pointer {% if form.get('service_type') != 'vymena_oleje' %}hidden{% endif %}">
+      <input type="checkbox" name="update_oil_interval" value="1" checked
+             class="mt-0.5 w-5 h-5 rounded border-border2 text-accent focus:ring-accent">
+      <span>
+        <span class="block text-sm font-semibold">Zapsat jako poslední výměnu oleje</span>
+        <span class="block text-xs text-muted">
+          Přepíše na vozidle datum i stav km poslední výměny, takže se přepočítá další termín a semafor.
+        </span>
+      </span>
+    </label>
+  </div>
+
+  <details class="kj-card mb-4" {% if form.get('supplier') or form.get('price_czk') %}open{% endif %}>
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Servis, cena, poznámka</summary>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Servis / dodavatel</label>
+        <input class="kj-input" name="supplier" maxlength="255" value="{{ value_of('supplier') }}">
+      </div>
+      <div>
+        <label class="kj-label">Cena (Kč)</label>
+        <input class="kj-input" type="text" inputmode="decimal" name="price_czk" value="{{ value_of('price_czk') }}">
+      </div>
+    </div>
+    <label class="kj-label">Poznámka</label>
+    <input class="kj-input" name="note" maxlength="500" value="{{ value_of('note') }}">
+  </details>
+
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Fotografie faktury</label>
+    <input class="kj-input !py-3" type="file" name="invoice" accept="image/*" capture="environment">
+    <p class="text-xs text-muted mt-1">Nepovinné. Další přílohy lze přidat i potom.</p>
+  </div>
+
+  <button type="submit" class="kj-btn">Uložit úkon</button>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/services" class="kj-btn-secondary ml-2">Zrušit</a>
+</form>
+
+<script>
+  // Nabídka „zapsat jako výměnu oleje" má smysl jen u toho typu úkonu.
+  const oilBox = document.getElementById("oil-box");
+  document.querySelectorAll("[data-service-type]").forEach((radio) => {
+    radio.addEventListener("change", () => {
+      oilBox.classList.toggle("hidden", radio.dataset.serviceType !== "vymena_oleje");
+    });
+  });
+</script>
+{% endblock %}

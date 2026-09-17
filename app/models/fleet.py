@@ -203,8 +203,13 @@ class VehicleAssignment(Base):
 class VehicleDocument(Base):
     """TP / OTP / zelená karta / ... (zadání 18). Kept apart from
     Attachment because a document is not an image-pipeline artefact: it may
-    be a PDF, is never resized, carries validity metadata, and is served
-    under the stricter vehicle-manage gate rather than plain view."""
+    be a PDF, is never resized, and carries validity metadata.
+
+    Reading is open to anyone who can see the vehicle - a driver stopped by
+    the police needs the green card, so gating it behind vehicle-manage
+    would make the feature useless in the field. Uploading and deleting is
+    vehicle-manage only (see modules/documents/service.py and
+    docs/ROZHODNUTI.md R24)."""
 
     __tablename__ = "vehicle_documents"
     __table_args__ = {"schema": SCHEMA}

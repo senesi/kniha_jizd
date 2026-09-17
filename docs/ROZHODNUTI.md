@@ -421,3 +421,61 @@ provenienci — ne jako důvod přeskočit validaci.
 **Účtenka se ukládá dřív než tankování**, stejně jako fotka tachometru
 u jízdy (R11) a ze stejného důvodu: `<input type="file">` nejde
 předvyplnit, takže by se mezi krokem „ukaž návrh" a „potvrď" ztratila.
+
+---
+
+## R24 — Dokumenty vozidla: čtení všem, kdo vidí vozidlo
+
+**Rozhodnutí.** Dokumenty (TP, OTP, zelená karta, pojistka) si smí
+otevřít **každý, kdo vidí vozidlo**. Nahrávat a mazat je smí jen správce
+vozidla.
+
+**Proč změna.** Původní komentář v modelu říkal, že dokumenty jsou „za
+přísnějším oprávněním než běžné čtení". Při implementaci se ukázalo, že
+to nejde dohromady s tím, na co ty dokumenty jsou: zelená karta a
+technický průkaz jsou přesně to, co řidič potřebuje v ruce při dopravní
+kontrole nebo po nehodě. Kdyby se k nim nedostal, funkce by v terénu
+byla k ničemu.
+
+Zadání 4 běžnému uživateli zakazuje dokumenty **měnit**, ne je vidět —
+takže to původní čtení nebylo požadavkem, jen mým vlastním
+přitvrzením. Komentář v modelu jsem srovnal s tímhle rozhodnutím, aby
+si dvě místa neodporovala.
+
+**Co zůstává.** Soubory leží pod náhodnými UUID jmény v adresáři, který
+není servírovaný staticky; každé stažení projde autorizovanou routou a
+kontrolou viditelnosti vozidla. Neexistuje uhodnutelná URL (zadání
+18/30). Odpověď má `Cache-Control: private`, aby dokument neskončil ve
+sdílené cache. Soft-smazaný dokument je nedostupný okamžitě — repozitář
+ho nenajde.
+
+---
+
+## R25 — Výměna oleje uzavírá smyčku se semaforem
+
+**Rozhodnutí.** Servisní záznam typu `vymena_oleje` nabídne (zaškrtnuto
+předem) přepis `last_oil_change_at` a `last_oil_change_km` na vozidle.
+U jiných typů úkonu se příznak ignoruje, i když přijde ve formuláři.
+
+**Proč.** Bez toho by šlo zapsat výměnu oleje do servisní knihy a
+semafor na kartě vozidla by dál svítil oranžově — dva zdroje pravdy o
+téže věci. Zadání 17 chce, aby se další termín dopočítal z intervalů;
+tohle je to, co ty intervaly posouvá.
+
+**Proč volitelné.** Zpětně dopsaný starý úkon nesmí přepsat novější
+stav. Proto zaškrtávátko, ne automatika.
+
+---
+
+## R26 — Servisní historie se maže jen naoko
+
+**Rozhodnutí.** `VehicleService.deleted_at` (soft delete), stejně jako u
+příloh a dokumentů. Smazaný záznam zmizí z výpisů, ale řádek zůstává.
+
+**Proč.** Servisní historie je podklad pro posouzení technického stavu i
+hodnoty vozidla. Omylem smazaný záznam o výměně rozvodů je informace,
+která se nedá rekonstruovat.
+
+**Co jde natvrdo.** `TripFueling` se maže úplně — je to jeden údaj o
+množství a ceně, typicky smazaný do minuty po překlepu, a jeho účtenka
+(příloha) zůstává i tak.

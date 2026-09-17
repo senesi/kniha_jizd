@@ -40,6 +40,10 @@ MESSAGES: dict[str, str] = {
     "defect_updated": "Závada byla aktualizována.",
     "fueling_added": "Záznam byl uložen.",
     "fueling_deleted": "Záznam byl smazán.",
+    "service_added": "Servisní úkon byl zapsán.",
+    "service_deleted": "Servisní úkon byl smazán.",
+    "document_added": "Dokument byl nahrán.",
+    "document_deleted": "Dokument byl smazán.",
 }
 
 

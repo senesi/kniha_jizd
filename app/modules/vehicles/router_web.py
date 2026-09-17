@@ -33,7 +33,9 @@ from app.models.fleet import FUEL_TYPES, VEHICLE_STATUSES, VEHICLE_TYPES, Vehicl
 from app.modules.approvals import repository as approvals_repository
 from app.modules.approvals import service as approvals_service
 from app.modules.defects import repository as defects_repository
+from app.modules.documents import repository as documents_repository
 from app.modules.fuelings import repository as fuelings_repository
+from app.modules.services import repository as services_repository
 from app.modules.trips import repository as trips_repository
 from app.modules.vehicles import repository, service
 from app.modules.vehicles.schemas import VehicleCreate, VehicleUpdate
@@ -239,6 +241,9 @@ async def vehicle_detail(
         can_report_defect="fleet.defect.report" in codes,
         recent_fuelings=await fuelings_repository.list_for_vehicle(db, vehicle.id, limit=5),
         fueling_totals=await fuelings_repository.totals_for_vehicle(db, vehicle.id),
+        service_totals=await services_repository.totals_for_vehicle(db, vehicle.id),
+        last_services=await services_repository.list_for_vehicle(db, vehicle.id),
+        documents=await documents_repository.list_for_vehicle(db, vehicle.id),
     )
 
 
