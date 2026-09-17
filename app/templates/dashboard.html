@@ -67,7 +67,7 @@
           {% endfor %}
         </div>
       </div>
-      {{ status_badge(item.vehicle) }}
+      {{ status_badge(item.vehicle, item.vehicle.id in busy_vehicle_ids) }}
     </a>
     {% endfor %}
   </div>
@@ -87,7 +87,7 @@
         <div class="font-extrabold truncate">{{ vehicle.license_plate }}</div>
         <div class="text-xs text-muted2 truncate">{{ vehicle.brand }} {{ vehicle.model }} &middot; {{ vehicle.current_odometer_km | km }} km</div>
       </div>
-      {{ status_badge(vehicle) }}
+      {{ status_badge(vehicle, vehicle.id in busy_vehicle_ids) }}
     </a>
     {% endfor %}
   </div>

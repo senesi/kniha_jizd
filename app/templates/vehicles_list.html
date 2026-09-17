@@ -39,7 +39,7 @@
           {{ approval_badge(row.vehicle) }}
         </div>
       </div>
-      {{ status_badge(row.vehicle) }}
+      {{ status_badge(row.vehicle, row.vehicle.id in busy_vehicle_ids) }}
     </div>
     <div class="mt-3 flex items-center gap-4 text-sm text-subtle">
       <span><span class="text-muted">Tachometr:</span> <strong>{{ row.vehicle.current_odometer_km | km }} km</strong></span>
@@ -101,7 +101,7 @@
               {% endfor %}
             </div>
           </td>
-          <td class="kj-td">{{ status_badge(row.vehicle) }}</td>
+          <td class="kj-td">{{ status_badge(row.vehicle, row.vehicle.id in busy_vehicle_ids) }}</td>
         </tr>
         {% endfor %}
       </tbody>

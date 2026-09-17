@@ -13,7 +13,7 @@
     <div class="min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
         <h1 class="text-2xl font-extrabold tracking-tight">{{ vehicle.license_plate }}</h1>
-        {{ status_badge(vehicle) }}
+        {{ status_badge(vehicle, active_trip is not none) }}
       </div>
       <p class="text-muted2">{{ vehicle.internal_code }} &middot; {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.year_of_manufacture %} ({{ vehicle.year_of_manufacture }}){% endif %}</p>
       <div class="flex flex-wrap gap-1 mt-1">

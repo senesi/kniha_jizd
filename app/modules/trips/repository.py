@@ -89,6 +89,16 @@ async def list_all_active_trips(db: AsyncSession) -> list[Trip]:
     return list(result.scalars().all())
 
 
+async def busy_vehicle_ids(db: AsyncSession) -> set[uuid.UUID]:
+    """Vozidla, na kterých právě běží jízda - jedním dotazem pro celý
+    výpis, aby seznam vozidel nedělal N+1.
+
+    Používá se pro odznak „Vypůjčené". Stav se nikde neukládá (R4), takže
+    tohle je jediný zdroj pravdy."""
+    result = await db.execute(select(Trip.vehicle_id).where(Trip.status == "active"))
+    return {row[0] for row in result.all()}
+
+
 async def count_active_trips(db: AsyncSession) -> int:
     result = await db.execute(select(Trip.id).where(Trip.status == "active"))
     return len(result.all())

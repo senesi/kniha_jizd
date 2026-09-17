@@ -22,9 +22,18 @@
   </div>
 {% endmacro %}
 
-{% macro status_badge(vehicle) %}
+{# `is_busy` = na vozidle běží otevřená jízda. Předává se zvenčí, protože
+   „vypůjčené" není uložený stav vozidla (viz docs/ROZHODNUTI.md R4) -
+   odvozuje se z existence otevřené jízdy. Bez toho by odznak hlásil
+   „K dispozici" u auta, které je právě na cestě.
+
+   Pořadí odpovídá otázce „můžu si ho teď vzít?": vypůjčené vozidlo je
+   fyzicky pryč, což přebíjí i to, že je vedené jako v servisu. #}
+{% macro status_badge(vehicle, is_busy=false) %}
   {% if not vehicle.is_active %}
     <span class="kj-badge bg-muted/15 text-muted2">Neaktivní</span>
+  {% elif is_busy %}
+    <span class="kj-badge bg-accent/15 text-accent">Vypůjčené</span>
   {% elif vehicle.status == "in_service" %}
     <span class="kj-badge bg-warning/15 text-warning">V servisu</span>
   {% elif vehicle.status == "blocked" %}

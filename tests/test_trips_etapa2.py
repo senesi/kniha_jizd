@@ -592,3 +592,81 @@ async def test_start_form_redirects_to_running_trip(logged_in_client, csrf_token
     )
     assert response.status_code == 303
     assert trip_id in response.headers["location"]
+
+
+# --- odznak stavu vozidla ---------------------------------------------
+
+def _badge_for(html: str, plate: str) -> str:
+    """Odznak stavu z řádku daného vozidla.
+
+    Testovací databáze je společná pro celou sadu, takže seznam vozidel
+    obsahuje i auta z jiných testů - hledat „K dispozici" kdekoliv na
+    stránce by nic nedokazovalo."""
+    badges = ("Vypůjčené", "Neaktivní", "V servisu", "Mimo provoz", "K dispozici")
+    # Projít VŠECHNY výskyty SPZ: na kartě vozidla je první v <title>,
+    # kde žádný odznak není.
+    found = False
+    start = html.find(plate)
+    while start != -1:
+        found = True
+        window = html[start:start + 900]
+        for badge in badges:
+            if badge in window:
+                return badge
+        start = html.find(plate, start + 1)
+    assert found, f"vozidlo {plate} na stránce není"
+    raise AssertionError(f"u vozidla {plate} není žádný odznak stavu")
+
+
+async def test_borrowed_vehicle_is_not_shown_as_available(logged_in_client, csrf_token):
+    """Regrese: odznak stavu se koukal jen na vehicle.status, takže u auta
+    na cestě hlásil „K dispozici" - na kartě vozidla dokonce přímo nad
+    cedulí „Vozidlo je právě vypůjčené"."""
+    plate = "1XX 0001"
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="B-01", license_plate=plate)
+
+    listing = await logged_in_client.get("/kniha-jizd/vehicles")
+    assert _badge_for(listing.text, plate) == "K dispozici"
+
+    trip_id = await _start_ok(logged_in_client, csrf_token, vehicle_id)
+
+    listing = await logged_in_client.get("/kniha-jizd/vehicles")
+    assert _badge_for(listing.text, plate) == "Vypůjčené"
+
+    # Karta vozidla - odznak si nesmí odporovat s cedulí pod ním
+    card = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}")
+    assert _badge_for(card.text, plate) == "Vypůjčené"
+    assert "Vozidlo je právě vypůjčené" in card.text
+
+    # Po ukončení je zase k dispozici
+    await _end(logged_in_client, csrf_token, trip_id)
+    after = await logged_in_client.get("/kniha-jizd/vehicles")
+    assert _badge_for(after.text, plate) == "K dispozici"
+
+
+async def test_borrowed_badge_outranks_service_status(logged_in_client, csrf_token):
+    """Auto odvezené do servisu je fyzicky pryč - to přebíjí i to, že je
+    vedené jako „v servisu"."""
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="B-02", license_plate="1XX 0002", status="in_service",
+    )
+    await _start_ok(logged_in_client, csrf_token, vehicle_id, confirm="vehicle_status")
+
+    listing = await logged_in_client.get("/kniha-jizd/vehicles")
+    assert _badge_for(listing.text, "1XX 0002") == "Vypůjčené"
+
+
+async def test_inactive_vehicle_badge_wins_over_everything(logged_in_client, csrf_token):
+    """Neaktivní vozidlo si nikdo nepůjčí, takže „Neaktivní" zůstává
+    nejsilnější informace."""
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="B-03", license_plate="1XX 0003")
+    await _start_ok(logged_in_client, csrf_token, vehicle_id)
+    await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/edit",
+        data={"csrf_token": csrf_token, "internal_code": "B-03", "license_plate": "1XX 0003",
+              "brand": "Škoda", "model": "Octavia", "vehicle_type": "osobni", "status": "available",
+              "visibility": "all"},
+        follow_redirects=False,
+    )
+    listing = await logged_in_client.get("/kniha-jizd/vehicles")
+    assert _badge_for(listing.text, "1XX 0003") == "Neaktivní"

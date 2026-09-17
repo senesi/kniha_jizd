@@ -60,4 +60,5 @@ async def dashboard(
         request, "dashboard.html", user, db,
         counts=counts, attention=attention, my_vehicles=my_vehicles,
         my_active_trips=await trips_repository.list_active_trips_for_user(db, user.id),
+        busy_vehicle_ids=await trips_repository.busy_vehicle_ids(db),
     )

@@ -159,6 +159,7 @@ async def vehicles_list(
     return await render_page(
         request, "vehicles_list.html", user, db,
         rows=rows, only=only, can_create=CREATE in codes,
+        busy_vehicle_ids=await trips_repository.busy_vehicle_ids(db),
     )
 
 
