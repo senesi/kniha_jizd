@@ -98,7 +98,7 @@ async def update_vehicle(db: AsyncSession, vehicle: Vehicle, data: VehicleUpdate
 
     await log_action(
         db, user_id=actor_id, action="update", module=MODULE, entity_type="vehicle", entity_id=str(vehicle.id),
-        before_data=_jsonable(before), after_data=_jsonable(changes),
+        before_data=before, after_data=changes,
     )
     await db.commit()
     await db.refresh(vehicle)
@@ -119,13 +119,6 @@ async def _record_assignment_change(db: AsyncSession, vehicle: Vehicle, actor_id
             vehicle_id=vehicle.id, user_id=vehicle.responsible_user_id, valid_from=now, created_by=actor_id,
         ))
     await db.flush()
-
-
-def _jsonable(values: dict) -> dict:
-    return {
-        k: (v.isoformat() if hasattr(v, "isoformat") else (str(v) if isinstance(v, uuid.UUID) else v))
-        for k, v in values.items()
-    }
 
 
 async def correct_odometer(

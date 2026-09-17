@@ -294,3 +294,38 @@ async def test_non_image_upload_is_rejected(logged_in_client, csrf_token):
         follow_redirects=False,
     )
     assert response.status_code == 400
+
+
+async def test_edit_vehicle_with_numeric_fields(logged_in_client, csrf_token):
+    """Regrese: objem nádrže a kapacita baterie jsou Numeric, takže se
+    z databáze vrací jako Decimal. Ten se nedal zapsat do JSON auditu a
+    uložení formuláře padalo na 500 - jen u vozidel, kde byly ty údaje
+    vyplněné, což předchozí testy míjely."""
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="VOZ-NUM", license_plate="7NU 7777",
+        tank_capacity_l="50", battery_capacity_kwh="77",
+    )
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/edit",
+        data={"csrf_token": csrf_token, "internal_code": "VOZ-NUM", "license_plate": "7NU 7777",
+              "brand": "Škoda", "model": "Octavia", "vehicle_type": "osobni", "status": "available",
+              "is_active": "1", "visibility": "all",
+              "tank_capacity_l": "55", "battery_capacity_kwh": "80"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, response.text[:400]
+
+    vehicle = await _vehicle_row(vehicle_id)
+    assert float(vehicle.tank_capacity_l) == 55
+    assert float(vehicle.battery_capacity_kwh) == 80
+
+    # A audit musí obsahovat obě hodnoty jako čísla
+    from app.core.db import async_session_factory
+    from app.models.core import AuditLog
+
+    async with async_session_factory() as db:
+        entry = (await db.execute(
+            select(AuditLog).where(AuditLog.action == "update", AuditLog.entity_id == vehicle_id)
+        )).scalar_one()
+    assert entry.before_data["tank_capacity_l"] == 50.0
+    assert entry.after_data["tank_capacity_l"] == 55.0
