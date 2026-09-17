@@ -50,14 +50,14 @@ tam, až modul vznikne.
 
 ## 3. Produkce
 
-- Adresář projektu na VPS: `/opt/kniha-jizd/` *(plán, zatím nevytvořeno)*.
+- Adresář projektu na VPS: `/opt/kniha_jizd/` *(plán, zatím nevytvořeno)*.
 - Kontejnery *(plán)*: `kniha-jizd-app` (interní port 8000, publikovaný
   jen na `127.0.0.1`) a `kniha-jizd-postgres`.
 - Databáze: PostgreSQL, produkční databáze `kniha_jizd`.
 - Persistentní data:
-  - `/opt/kniha-jizd/data/photos` — fotografie (tachometr, účtenky,
+  - `/opt/kniha_jizd/data/photos` — fotografie (tachometr, účtenky,
     závady, vozidla, faktury),
-  - `/opt/kniha-jizd/data/documents` — dokumenty vozidel (TP, OTP, …).
+  - `/opt/kniha_jizd/data/documents` — dokumenty vozidel (TP, OTP, …).
 - Databáze ani interní port se nikdy nevystavují do internetu.
 - Ostatní projekty na VPS (DSS, Evidence nářadí) se deployem tohoto
   projektu nesmí dotknout.
@@ -66,13 +66,16 @@ tam, až modul vznikne.
 
 - Workflow: `localhost → testy → git commit → git push → ruční deploy na
   VPS`. Push neznamená automatický deploy.
-- SSH na VPS: alias `netcup-fve`. Na tomto stroji spouštěj SSH přes
-  **PowerShell**, ne přes Bash — Git Bash nemá napojený `SSH_AUTH_SOCK`
-  na Windows ssh-agent a skončí na „Permission denied (publickey)".
-- Deploy skript zatím neexistuje; až vznikne, má kopírovat postup
-  Evidence nářadí: kontrola čistého working tree → `git pull --ff-only`
-  → **záloha databáze** → build image → migrace → restart *pouze*
-  aplikačního kontejneru → kontrola `/healthz`.
+- **Přístup na VPS a celý deploy postup je v `docs/SERVER_SETUP.md`** —
+  SSH alias, izolace ostatních projektů, struktura na serveru, nginx,
+  co ověřit po nasazení. Při práci se serverem začni tam.
+- Ve zkratce: alias `netcup-fve`, SSH výhradně přes **PowerShell**
+  (Git Bash nemá `SSH_AUTH_SOCK` napojený na Windows ssh-agent a skončí
+  na „Permission denied (publickey)"). Klíč má passphrase odemčenou ve
+  službě `ssh-agent`; když služba neběží, SSH selže — spustí ji uživatel.
+- Deploy skript: `scripts/deploy_vps.sh` — čistý working tree →
+  `git pull --ff-only` → **záloha databáze** → build image → migrace →
+  restart *pouze* aplikačního kontejneru → kontrola `/healthz`.
 
 ## 5. Lokální vývoj
 
