@@ -63,3 +63,12 @@
   } %}
   <span class="kj-badge {{ styles.get(status, 'bg-surface text-muted2') }}">{{ labels.DEFECT_STATUS.get(status, status) }}</span>
 {% endmacro %}
+
+{# Sezóna sady kol - jedno místo, ať se ikona i barva nerozejdou. #}
+{% macro wheel_badge(season) %}
+  {% if season == "winter" %}
+  <span class="kj-badge bg-info/15 text-info">❄️ Zimní</span>
+  {% else %}
+  <span class="kj-badge bg-warning/15 text-warning">☀️ Letní</span>
+  {% endif %}
+{% endmacro %}

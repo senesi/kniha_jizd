@@ -44,6 +44,14 @@ MESSAGES: dict[str, str] = {
     "service_deleted": "Servisní úkon byl smazán.",
     "document_added": "Dokument byl nahrán.",
     "document_deleted": "Dokument byl smazán.",
+    "wheel_set_added": "Sada kol byla přidána.",
+    "wheel_set_updated": "Sada byla upravena.",
+    "wheel_set_deleted": "Sada byla vyřazena.",
+    "wheels_fitted": "Vozidlo bylo přezuto.",
+    "wheels_removed": "Kola byla sundána.",
+    "expense_added": "Výdaj byl zapsán.",
+    "expense_deleted": "Výdaj byl smazán.",
+    "receipt_added": "Doklad byl nahrán.",
 }
 
 

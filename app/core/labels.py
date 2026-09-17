@@ -89,6 +89,8 @@ DOCUMENT_TYPE: dict[str, str] = {
     "pojistka": "Pojistná smlouva",
     "leasing": "Leasing",
     "jine": "Jiné",
+    "faktura": "Faktura",
+    "doklad": "Doklad",
 }
 
 NOTIFICATION_KIND: dict[str, str] = {
@@ -115,6 +117,23 @@ TRIP_REQUEST_STATUS: dict[str, str] = {
 VEHICLE_VISIBILITY: dict[str, str] = {
     "all": "Viditelné všem",
     "restricted": "Jen odpovědná osoba a administrátor",
+}
+
+EXPENSE_TYPE: dict[str, str] = {
+    "palivo": "Palivo",
+    "nabijeni": "Nabíjení",
+    "servis": "Servis",
+    "pneumatiky": "Pneumatiky",
+    "stk": "STK",
+    "dalnicni_znamka": "Dálniční známka",
+    "pojisteni": "Pojištění",
+    "myti": "Mytí",
+    "ostatni": "Ostatní",
+}
+
+WHEEL_SEASON: dict[str, str] = {
+    "summer": "Letní",
+    "winter": "Zimní",
 }
 
 ROLE: dict[str, str] = {

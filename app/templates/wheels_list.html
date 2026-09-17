@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% from "_macros.html" import warning_box %}
+{% from "_vehicle.html" import wheel_badge %}
+{% block title %}Kola {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
+
+{% macro value_of(name) %}{{ form.get(name) if form.get(name) is not none else '' }}{% endmacro %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Kola a pneumatiky</h1>
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-muted2 hover:text-accent">
+      {{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}
+    </a>
+  </div>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<!-- Aktuální stav -->
+{% if active_fitment %}
+{% set current = active_fitment.wheel_set %}
+<div class="rounded-2xl border-2 p-4 mb-4 {% if current.season == 'winter' %}bg-info/10 border-info/40{% else %}bg-warning/10 border-warning/40{% endif %}">
+  <div class="text-xs font-bold uppercase tracking-wide text-muted2">Aktuálně nasazeno</div>
+  <div class="text-2xl font-extrabold mt-1">
+    🛞 {{ "ZIMNÍ KOLA" if current.season == "winter" else "LETNÍ KOLA" }}
+  </div>
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 text-sm">
+    <div>
+      <div class="text-xs text-muted">Sada</div>
+      <div class="font-semibold">{{ current.brand or "—" }}{% if current.model %} {{ current.model }}{% endif %}</div>
+      {% if current.size %}<div class="text-xs text-muted2">{{ current.size }}</div>{% endif %}
+    </div>
+    <div>
+      <div class="text-xs text-muted">Nájezd na sadě</div>
+      <div class="font-semibold">{{ distances.get(current.id, 0) | km }} km</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Stáří</div>
+      <div class="font-semibold">
+        {% if current.age_years is not none %}{{ current.age_years }} let{% else %}—{% endif %}
+      </div>
+      {% if current.purchased_at %}<div class="text-xs text-muted2">od {{ current.purchased_at | d }}</div>{% endif %}
+    </div>
+    <div>
+      <div class="text-xs text-muted">DOT / dezén</div>
+      <div class="font-semibold">
+        {{ current.dot_code or "—" }}{% if current.tread_depth_mm %} · {{ current.tread_depth_mm | liters }} mm{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="text-xs text-muted2 mt-3">
+    Nasazeno {{ active_fitment.fitted_at | d }} při {{ active_fitment.fitted_odometer_km | km }} km
+  </div>
+</div>
+{% else %}
+<div class="kj-card mb-4 text-center text-muted2">
+  🛞 U tohoto vozidla zatím nejsou kola evidovaná.
+</div>
+{% endif %}
+
+{% if can_manage and wheel_sets %}
+<!-- Přezutí -->
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Přezout vozidlo</h2>
+  <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/wheels/fit">
+    {{ csrf_field(request) }}
+    {{ warning_box(warnings) }}
+
+    <label class="kj-label mt-0">Nasadit sadu <span class="text-danger">*</span></label>
+    <div class="grid gap-2">
+      {% for wheel_set in wheel_sets %}
+      {% set is_current = active_fitment and active_fitment.wheel_set_id == wheel_set.id %}
+      <label class="flex items-center gap-3 rounded-xl border border-border2 bg-white px-3 py-3 {% if is_current %}opacity-50{% else %}cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5{% endif %}">
+        <input type="radio" name="wheel_set_id" value="{{ wheel_set.id }}" required
+               class="w-5 h-5 text-accent focus:ring-accent"
+               {% if is_current %}disabled{% endif %}
+               {% if form.get('wheel_set_id') == wheel_set.id|string %}checked{% endif %}>
+        <span class="min-w-0">
+          <span class="block text-sm font-bold">
+            {{ wheel_badge(wheel_set.season) }}
+            {{ wheel_set.brand or "bez značky" }}{% if wheel_set.model %} {{ wheel_set.model }}{% endif %}
+          </span>
+          <span class="block text-xs text-muted2">
+            {{ wheel_set.size or "rozměr neuveden" }}
+            &middot; najeto {{ distances.get(wheel_set.id, 0) | km }} km
+            {% if is_current %}&middot; právě nasazeno{% endif %}
+          </span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Datum přezutí <span class="text-danger">*</span></label>
+        <input class="kj-input" type="date" name="fitted_at" required
+               value="{{ form.get('fitted_at') or today_iso }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav tachometru <span class="text-danger">*</span></label>
+        <input class="kj-input" type="number" min="0" name="odometer_km" required
+               value="{{ form.get('odometer_km') or vehicle.current_odometer_km }}">
+      </div>
+    </div>
+    <label class="kj-label">Poznámka</label>
+    <input class="kj-input" name="note" maxlength="500" value="{{ value_of('note') }}">
+
+    <button type="submit" class="kj-btn-hero mt-4">🛞 Přezout vozidlo</button>
+    <p class="text-xs text-muted mt-2">
+      Stávající sada se automaticky sundá se stejným datem a stavem km.
+    </p>
+  </form>
+
+  {% if active_fitment %}
+  <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/wheels/remove"
+        class="flex flex-wrap items-end gap-2 mt-4 pt-4 border-t border-divider-soft">
+    {{ csrf_field(request) }}
+    <div class="grow min-w-[140px]">
+      <label class="kj-label mt-0">Jen sundat – datum</label>
+      <input class="kj-input" type="date" name="removed_at" required value="{{ today_iso }}">
+    </div>
+    <div class="grow min-w-[140px]">
+      <label class="kj-label mt-0">Stav km</label>
+      <input class="kj-input" type="number" min="0" name="odometer_km" required
+             value="{{ vehicle.current_odometer_km }}">
+    </div>
+    <button type="submit" class="kj-btn-secondary">Sundat kola</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Sady -->
+<h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Sady vozidla</h2>
+{% if not wheel_sets %}
+<div class="kj-card text-center text-muted2 mb-4">Zatím není evidovaná žádná sada.</div>
+{% endif %}
+
+<div class="grid gap-2 mb-6">
+  {% for wheel_set in wheel_sets %}
+  {% set is_current = active_fitment and active_fitment.wheel_set_id == wheel_set.id %}
+  <div class="kj-card !p-4 {% if is_current %}border-l-4 !border-l-accent{% endif %}">
+    <div class="flex items-start gap-3">
+      {% if wheel_set.photos %}
+      <a href="/kniha-jizd/attachments/{{ wheel_set.photos[0].id }}/full" target="_blank" class="shrink-0">
+        <img src="/kniha-jizd/attachments/{{ wheel_set.photos[0].id }}/thumb" alt="Sada kol"
+             class="w-14 h-14 object-cover rounded-xl border border-divider-soft">
+      </a>
+      {% endif %}
+      <div class="min-w-0 grow">
+        <div class="flex items-center gap-2 flex-wrap">
+          {{ wheel_badge(wheel_set.season) }}
+          <span class="font-bold">{{ wheel_set.brand or "bez značky" }}{% if wheel_set.model %} {{ wheel_set.model }}{% endif %}</span>
+          {% if is_current %}<span class="kj-badge bg-accent text-white">nasazeno</span>{% endif %}
+        </div>
+        <div class="text-xs text-muted2 mt-1">
+          {{ wheel_set.size or "rozměr neuveden" }}
+          {% if wheel_set.dot_code %} &middot; DOT {{ wheel_set.dot_code }}{% endif %}
+          {% if wheel_set.tread_depth_mm %} &middot; dezén {{ wheel_set.tread_depth_mm | liters }} mm{% endif %}
+        </div>
+        <div class="text-xs text-muted2">
+          najeto {{ distances.get(wheel_set.id, 0) | km }} km
+          {% if wheel_set.purchased_at %} &middot; pořízeno {{ wheel_set.purchased_at | d }}{% endif %}
+          {% if wheel_set.age_years is not none %} ({{ wheel_set.age_years }} let){% endif %}
+        </div>
+        {% if wheel_set.note %}<div class="text-xs text-muted2 mt-1">{{ wheel_set.note }}</div>{% endif %}
+      </div>
+      {% if can_manage and not is_current %}
+      <form method="post" action="/kniha-jizd/wheel-sets/{{ wheel_set.id }}/delete" class="shrink-0">
+        {{ csrf_field(request) }}
+        <button type="submit" class="text-xs text-danger hover:underline">vyřadit</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if can_manage %}
+<!-- Nová sada -->
+<details class="kj-card mb-6" {% if error and form.get('season') %}open{% endif %}>
+  <summary class="text-sm font-bold uppercase tracking-wide text-muted2 cursor-pointer">Přidat sadu</summary>
+  <form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/wheels/sets" enctype="multipart/form-data">
+    {{ csrf_field(request) }}
+    <label class="kj-label">Sezóna <span class="text-danger">*</span></label>
+    <div class="grid grid-cols-2 gap-2">
+      {% for season in seasons %}
+      <label class="flex items-center gap-2 rounded-xl border border-border2 bg-white px-3 py-3 cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5">
+        <input type="radio" name="season" value="{{ season }}" required
+               class="w-5 h-5 text-accent focus:ring-accent"
+               {% if form.get('season') == season %}checked{% endif %}>
+        <span class="text-sm font-bold">{{ "❄️ Zimní" if season == "winter" else "☀️ Letní" }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Výrobce</label>
+        <input class="kj-input" name="brand" maxlength="100" value="{{ value_of('brand') }}" placeholder="Continental">
+      </div>
+      <div>
+        <label class="kj-label">Model</label>
+        <input class="kj-input" name="model" maxlength="100" value="{{ value_of('model') }}" placeholder="WinterContact TS 870">
+      </div>
+      <div>
+        <label class="kj-label">Rozměr</label>
+        <input class="kj-input" name="size" maxlength="50" value="{{ value_of('size') }}" placeholder="205/55 R16 91H">
+      </div>
+      <div>
+        <label class="kj-label">DOT / rok výroby</label>
+        <input class="kj-input" name="dot_code" maxlength="20" value="{{ value_of('dot_code') }}" placeholder="2124">
+      </div>
+      <div>
+        <label class="kj-label">Datum pořízení</label>
+        <input class="kj-input" type="date" name="purchased_at" value="{{ value_of('purchased_at') }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav km při pořízení</label>
+        <input class="kj-input" type="number" min="0" name="purchase_odometer_km"
+               value="{{ value_of('purchase_odometer_km') }}">
+      </div>
+      <div>
+        <label class="kj-label">Hloubka dezénu (mm)</label>
+        <input class="kj-input" type="text" inputmode="decimal" name="tread_depth_mm"
+               value="{{ value_of('tread_depth_mm') }}" placeholder="8,0">
+      </div>
+    </div>
+
+    <label class="kj-label">Poznámka</label>
+    <input class="kj-input" name="note" maxlength="500" value="{{ value_of('note') }}">
+
+    <label class="kj-label">Fotografie</label>
+    <input class="kj-input !py-3" type="file" name="photo" accept="image/*" capture="environment">
+
+    <button type="submit" class="kj-btn mt-4">Přidat sadu</button>
+  </form>
+</details>
+{% endif %}
+
+<!-- Historie přezutí -->
+{% if fitments %}
+<h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-2">Historie přezutí</h2>
+<div class="kj-card !p-0 overflow-hidden">
+  <table class="w-full">
+    <thead class="bg-surface">
+      <tr>
+        <th class="kj-th">Sada</th>
+        <th class="kj-th">Nasazeno</th>
+        <th class="kj-th">Sundáno</th>
+        <th class="kj-th text-right">Najeto</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for fitment in fitments %}
+      <tr>
+        <td class="kj-td">
+          <div class="flex items-center gap-2">
+            {{ wheel_badge(fitment.wheel_set.season) }}
+            <span class="text-sm font-semibold">{{ fitment.wheel_set.brand or "bez značky" }}</span>
+          </div>
+        </td>
+        <td class="kj-td text-sm">
+          {{ fitment.fitted_at | d }}<br>
+          <span class="text-xs text-muted2">{{ fitment.fitted_odometer_km | km }} km</span>
+        </td>
+        <td class="kj-td text-sm">
+          {% if fitment.removed_at %}
+          {{ fitment.removed_at | d }}<br>
+          <span class="text-xs text-muted2">{{ fitment.removed_odometer_km | km }} km</span>
+          {% else %}
+          <span class="kj-badge bg-accent/15 text-accent">stále nasazeno</span>
+          {% endif %}
+        </td>
+        <td class="kj-td text-sm text-right font-semibold">
+          {{ fitment.distance_km(vehicle.current_odometer_km) | km }} km
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

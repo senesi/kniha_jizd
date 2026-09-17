@@ -29,7 +29,7 @@ from app.core.documents import (
 )
 from app.core.access import MANAGE_ANY, MANAGE_OWN
 from app.models.core import User
-from app.models.fleet import DOCUMENT_TYPES, Vehicle, VehicleDocument
+from app.models.fleet import ALL_DOCUMENT_TYPES, DOCUMENT_TYPES, Vehicle, VehicleDocument
 from app.modules.documents import repository
 
 MODULE = "documents"
@@ -55,8 +55,16 @@ async def add_document(
     db: AsyncSession, *, vehicle: Vehicle, actor: User, doc_type: str, title: str,
     valid_from: date | None, valid_to: date | None, note: str | None,
     filename: str, content_type: str | None, data: bytes,
+    service_id: uuid.UUID | None = None, expense_id: uuid.UUID | None = None,
+    commit: bool = True,
 ) -> VehicleDocument:
-    if doc_type not in DOCUMENT_TYPES:
+    """`service_id` / `expense_id` dělají z dokumentu doklad k servisnímu
+    záznamu nebo výdaji. Takový dokument se nezobrazuje v seznamu papírů
+    vozidla, ale u svého záznamu - viz repository.list_for_vehicle.
+
+    `commit=False` umožňuje uložit doklad ve stejné transakci jako záznam,
+    ke kterému patří."""
+    if doc_type not in ALL_DOCUMENT_TYPES:
         raise DocumentError("Vyberte typ dokumentu.")
     if not title.strip():
         raise DocumentError("Název dokumentu je povinný.")
@@ -82,6 +90,8 @@ async def add_document(
         valid_to=valid_to,
         note=(note or "").strip() or None,
         uploaded_by=actor.id,
+        service_id=service_id,
+        expense_id=expense_id,
     )
     db.add(document)
     await db.flush()
@@ -92,10 +102,14 @@ async def add_document(
         after_data={
             "vehicle_id": str(vehicle.id), "doc_type": doc_type, "title": document.title,
             "original_filename": filename, "size_bytes": len(data),
+            "service_id": str(service_id) if service_id else None,
+            "expense_id": str(expense_id) if expense_id else None,
         },
     )
-    await db.commit()
-    return await repository.get(db, document.id)
+    if commit:
+        await db.commit()
+        return await repository.get(db, document.id)
+    return document
 
 
 async def delete_document(db: AsyncSession, *, document: VehicleDocument, actor: User) -> None:

@@ -12,8 +12,10 @@ from app.modules.approvals.router_web import approvals_router, vehicle_approvals
 from app.modules.auth.router_web import router as auth_web_router
 from app.modules.defects.router_web import defects_router, vehicle_defects_router
 from app.modules.documents.router_web import documents_router, vehicle_documents_router
+from app.modules.expenses.router_web import expenses_router, vehicle_expenses_router
 from app.modules.fuelings.router_web import fuelings_router, trip_fuelings_router
 from app.modules.services.router_web import services_router, vehicle_services_router
+from app.modules.wheels.router_web import vehicle_wheels_router, wheels_router
 from app.modules.dashboard.router_web import router as dashboard_web_router
 from app.modules.notifications.router_web import router as notifications_router
 from app.modules.reservations.router_web import reservations_router, vehicle_reservations_router
@@ -99,6 +101,10 @@ app.include_router(vehicle_services_router, prefix="/kniha-jizd")
 app.include_router(services_router, prefix="/kniha-jizd")
 app.include_router(vehicle_documents_router, prefix="/kniha-jizd")
 app.include_router(documents_router, prefix="/kniha-jizd")
+app.include_router(vehicle_wheels_router, prefix="/kniha-jizd")
+app.include_router(wheels_router, prefix="/kniha-jizd")
+app.include_router(vehicle_expenses_router, prefix="/kniha-jizd")
+app.include_router(expenses_router, prefix="/kniha-jizd")
 app.include_router(notifications_router, prefix="/kniha-jizd")
 app.include_router(settings_router, prefix="/kniha-jizd")
 app.include_router(users_router, prefix="/kniha-jizd")

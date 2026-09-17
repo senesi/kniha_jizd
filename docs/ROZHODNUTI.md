@@ -479,3 +479,74 @@ která se nedá rekonstruovat.
 **Co jde natvrdo.** `TripFueling` se maže úplně — je to jeden údaj o
 množství a ceně, typicky smazaný do minuty po překlepu, a jeho účtenka
 (příloha) zůstává i tak.
+
+---
+
+## R27 — Tankování se do výdajů nepřepisuje, jen načítá
+
+**Rozhodnutí.** `TripFueling` (tankování u jízdy) zůstává jediným místem,
+kde se eviduje palivo natankované během jízdy. Modul výdajů ho
+**nekopíruje** — přehled nákladů ho načítá jako druhý zdroj
+(`expenses/repository.combined_totals`) a zobrazuje odděleně jako
+„z jízd".
+
+**Proč.** Kdyby tankování zakládalo i výdaj, musel by někdo řešit, co se
+stane při opravě nebo smazání jednoho z nich. Dvojí zápis téhož faktu je
+přesně ten druh duplicity, který se časem rozejde.
+
+**Proč typy `palivo` a `nabijeni` přesto existují.** Pro nákupy **mimo
+jízdu**: kanystr do zásoby, měsíční faktura za tankovací kartu. Formulář
+u těchto dvou typů zobrazí upozornění, že tankování během jízdy patří
+k jízdě.
+
+**Důsledek.** „Celkové náklady" = zapsané výdaje + tankování z jízd.
+Kdyby se sčítaly jen výdaje, přehled by u většiny vozidel lhal o
+největší položce.
+
+---
+
+## R28 — Nasazená sada kol se odvozuje, neukládá
+
+**Rozhodnutí.** `WheelFitment` s `removed_at IS NULL` znamená „právě
+nasazeno". Na `WheelSet` ani na `Vehicle` žádný příznak není. Částečný
+unikátní index `uq_fleet_wheel_fitments_one_active_per_vehicle` zaručuje
+nejvýš jednu nasazenou sadu na vozidlo — i při dvou souběžných
+requestech.
+
+**Proč.** Stejná úvaha jako u „vypůjčeného" vozidla (R4) a rezervací
+(R3): uložený příznak se dřív nebo později rozejde se skutečností,
+protože ho musí někdo přepínat.
+
+**Nájezd na sadě** se počítá stejným způsobem: nasazená sada proti
+aktuálnímu stavu vozidla, sundaná proti stavu při sundání. Sečteno přes
+všechna období, kdy byla na voze — sada se může vracet.
+
+**Přezutí je jedna transakce.** Sundat starou a nasadit novou proběhne
+buď obojí, nebo nic; jinak by vozidlo zůstalo bez kol.
+
+**Co varuje, co zakazuje.** Dezén pod zákonným minimem (letní 1,6 mm,
+zimní 4 mm) je **varování** — aplikace nemá suplovat technickou
+kontrolu, ale nemá to ani mlčky přejít. Stav km nižší než při nasazení
+předchozí sady je **chyba**, protože by rozbil výpočet nájezdu.
+
+---
+
+## R29 — Doklad je dokument, ne třetí mechanismus na soubory
+
+**Rozhodnutí.** Doklady k servisnímu záznamu a k výdaji se ukládají jako
+`VehicleDocument` s vyplněným `service_id` nebo `expense_id`. Seznam
+dokumentů vozidla takové řádky filtruje pryč.
+
+**Proč.** V projektu už byla dvě úložiště: `Attachment` (obrázky,
+zmenšování, náhledy) a `VehicleDocument` (soubor tak jak je, umí PDF,
+autorizované stahování, soft delete). Faktura přijatá e-mailem je PDF,
+takže obrázkovou cestou neprojde — a psát třetí mechanismus jen kvůli
+tomu by znamenalo potřetí řešit tytéž věci: ověření obsahu, náhodná
+jména, oprávnění, mazání.
+
+**Co to vyřešilo navíc.** Servisní záznam dosud uměl přiložit jen
+fotografii. Teď zvládne i PDF, aniž by k tomu přibyl jediný nový
+model.
+
+**Proč filtrovat.** Bez toho by se mezi technický průkaz a zelenou kartu
+míchaly účtenky z myčky. Doklad se zobrazuje u svého záznamu.

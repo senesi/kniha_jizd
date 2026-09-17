@@ -67,7 +67,23 @@ SERVICE_TYPES = [
     "vymena_oleje", "filtry", "brzdy", "pneumatiky", "oprava", "pravidelny_servis", "stk", "jine",
 ]
 
+# Papíry k vozidlu. "faktura" a "doklad" patří k servisnímu záznamu nebo
+# výdaji (VehicleDocument.service_id / expense_id) - v seznamu dokumentů
+# vozidla se nezobrazují, aby se účtenky nemíchaly mezi TP a zelenou kartu.
 DOCUMENT_TYPES = ["tp", "otp", "zelena_karta", "pojistka", "leasing", "jine"]
+RECEIPT_DOCUMENT_TYPES = ["faktura", "doklad"]
+ALL_DOCUMENT_TYPES = DOCUMENT_TYPES + RECEIPT_DOCUMENT_TYPES
+
+WHEEL_SEASONS = ["summer", "winter"]
+
+# Druhy výdajů. "palivo" a "nabijeni" tu jsou pro nákupy mimo jízdu
+# (kanystr, faktura za tankovací kartu); tankování v rámci jízdy se
+# eviduje v TripFueling a do přehledu výdajů se načítá odtamtud, ne
+# přepisem - viz docs/ROZHODNUTI.md R27.
+EXPENSE_TYPES = [
+    "palivo", "nabijeni", "servis", "pneumatiky", "stk", "dalnicni_znamka",
+    "pojisteni", "myti", "ostatni",
+]
 
 # Every attachment is an image processed through app/core/photos.py. Which
 # workflow produced it matters - the odometer shot at trip start is what
@@ -75,6 +91,7 @@ DOCUMENT_TYPES = ["tp", "otp", "zelena_karta", "pojistka", "leasing", "jine"]
 # inferred from which FK happens to be set.
 ATTACHMENT_KINDS = [
     "vehicle_photo", "odometer_start", "odometer_end", "fuel_receipt", "defect_photo", "service_invoice",
+    "wheel_photo",
 ]
 
 NOTIFICATION_KINDS = [
@@ -220,6 +237,18 @@ class VehicleDocument(Base):
     )
     doc_type: Mapped[str] = mapped_column(String(30), nullable=False, default="jine")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Doklad patřící k servisnímu záznamu nebo výdaji. Obojí prázdné =
+    # papír k vozidlu (TP, OTP, zelená karta), který se ukazuje v sekci
+    # Dokumenty. Díky tomu má PDF účtenka stejné úložiště, autorizaci i
+    # soft delete jako ostatní dokumenty - žádný třetí mechanismus na
+    # soubory.
+    service_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.vehicle_services.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    expense_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.vehicle_expenses.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     # Random UUID filename on disk - never the user-supplied one (no path
     # traversal, no collisions, not guessable from the URL).
     stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -662,6 +691,172 @@ class TripNote(Base):
     author: Mapped["User | None"] = relationship()  # noqa: F821
 
 
+class WheelSet(Base):
+    """Konkrétní sada kol nebo pneumatik (ne jen „letní/zimní").
+
+    Sada patří vozidlu a zůstává mu i po sundání - podle historie se pozná,
+    kolik toho na ní auto najezdilo a jak je stará. Rušení je soft delete;
+    vyřazená sada nesmí zmizet z historie přezutí.
+
+    Jestli je sada zrovna nasazená, se **neukládá** - odvozuje se z
+    otevřeného WheelFitment (stejný princip jako „vypůjčené" u vozidla,
+    viz docs/ROZHODNUTI.md R4)."""
+
+    __tablename__ = "wheel_sets"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    vehicle_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.vehicles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    season: Mapped[str] = mapped_column(String(10), nullable=False)
+    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # "205/55 R16 91H" - volný text, normy se liší a číselník by překážel.
+    size: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    purchased_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    purchase_odometer_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # DOT kód nese týden a rok výroby ("2124" = 21. týden 2024).
+    dot_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    tread_depth_mm: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    vehicle: Mapped["Vehicle"] = relationship()
+    photos: Mapped[list["Attachment"]] = relationship(
+        viewonly=True, order_by="Attachment.created_at",
+        primaryjoin=lambda: and_(WheelSet.id == Attachment.wheel_set_id, Attachment.deleted_at.is_(None)),
+    )
+    fitments: Mapped[list["WheelFitment"]] = relationship(
+        back_populates="wheel_set", order_by="WheelFitment.fitted_at.desc()",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def age_years(self) -> float | None:
+        if self.purchased_at is None:
+            return None
+        return round((date.today() - self.purchased_at).days / 365.25, 1)
+
+
+class WheelFitment(Base):
+    """Jedno období, po které byla sada na vozidle (přezutí).
+
+    Otevřený řádek (`removed_at IS NULL`) znamená „právě nasazeno".
+    Částečný unikátní index zaručuje, že jedno vozidlo nemůže mít dvě
+    nasazené sady najednou - a to i při dvou souběžných requestech, což
+    kontrola v aplikaci sama zaručit neumí."""
+
+    __tablename__ = "wheel_fitments"
+    __table_args__ = (
+        CheckConstraint(
+            "removed_odometer_km IS NULL OR removed_odometer_km >= fitted_odometer_km",
+            name="ck_fleet_wheel_fitments_km_not_lower",
+        ),
+        Index(
+            "uq_fleet_wheel_fitments_one_active_per_vehicle", "vehicle_id",
+            unique=True, postgresql_where=text("removed_at IS NULL"),
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    wheel_set_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.wheel_sets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Denormalizované ze sady - index výš musí platit na vozidlo.
+    vehicle_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.vehicles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    fitted_at: Mapped[date] = mapped_column(Date, nullable=False)
+    fitted_odometer_km: Mapped[int] = mapped_column(Integer, nullable=False)
+    removed_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    removed_odometer_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    wheel_set: Mapped["WheelSet"] = relationship(back_populates="fitments")
+    vehicle: Mapped["Vehicle"] = relationship()
+
+    @property
+    def is_active(self) -> bool:
+        return self.removed_at is None
+
+    def distance_km(self, current_odometer_km: int) -> int:
+        """Nájezd za tohle období. U nasazené sady se počítá proti
+        aktuálnímu stavu vozidla, u sundané proti stavu při sundání."""
+        end = self.removed_odometer_km if self.removed_odometer_km is not None else current_odometer_km
+        return max(0, end - self.fitted_odometer_km)
+
+
+class VehicleExpense(Base):
+    """Výdaj na vozidlo (zadání: samostatný modul, ne součást servisu).
+
+    Tankování a nabíjení **v rámci jízdy** se sem nepřepisuje - eviduje se
+    v TripFueling a přehled výdajů ho načítá odtamtud. Typy `palivo` a
+    `nabijeni` jsou tu pro nákupy mimo jízdu (kanystr, měsíční faktura za
+    tankovací kartu). Viz docs/ROZHODNUTI.md R27.
+
+    Částka s DPH je povinná, rozpad na základ a DPH nepovinný - řidič u
+    pumpy má v ruce účtenku, ne účetní systém."""
+
+    __tablename__ = "vehicle_expenses"
+    __table_args__ = (
+        CheckConstraint("amount_czk >= 0", name="ck_fleet_expenses_amount_not_negative"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    vehicle_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.vehicles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Nepovinná vazba na jízdu - „tohle jsem platil při téhle cestě".
+    trip_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.trips.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    odometer_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expense_type: Mapped[str] = mapped_column(String(30), nullable=False, default="ostatni")
+
+    amount_czk: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    amount_net_czk: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    vat_czk: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Zatím vždy CZK, ale sloupec tu je, aby zahraniční tankování nešlo
+    # zapsat jako by to byly koruny.
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="CZK")
+
+    supplier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    vehicle: Mapped["Vehicle"] = relationship()
+    trip: Mapped["Trip | None"] = relationship()
+    creator: Mapped["User | None"] = relationship()  # noqa: F821
+    receipts: Mapped[list["VehicleDocument"]] = relationship(
+        viewonly=True, order_by="VehicleDocument.created_at",
+        primaryjoin=lambda: and_(
+            VehicleExpense.id == VehicleDocument.expense_id,
+            VehicleDocument.deleted_at.is_(None),
+        ),
+    )
+
+
 class Attachment(Base):
     """Every uploaded IMAGE in the app, in one table (vehicle gallery,
     odometer shots, fuel receipts, defect photos, service invoices).
@@ -694,6 +889,9 @@ class Attachment(Base):
     )
     fueling_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(f"{SCHEMA}.trip_fuelings.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    wheel_set_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.wheel_sets.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)

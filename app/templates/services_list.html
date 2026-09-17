@@ -80,6 +80,20 @@
           {% endfor %}
         </div>
         {% endif %}
+
+        {# Doklady v PDF - faktura přijatá e-mailem přes obrázkovou cestu
+           neprojde, tak má vlastní. #}
+        {% set documents = service_documents.get(record.id, []) %}
+        {% if documents %}
+        <div class="flex flex-wrap gap-2 mt-2">
+          {% for document in documents %}
+          <a href="/kniha-jizd/documents/{{ document.id }}/file" target="_blank"
+             class="kj-badge bg-surface text-subtle border border-divider">
+            📄 {{ document.original_filename }}
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
 
       <div class="text-right shrink-0">
@@ -91,8 +105,17 @@
               enctype="multipart/form-data" class="mt-2">
           {{ csrf_field(request) }}
           <label class="text-xs text-accent hover:underline cursor-pointer">
-            + faktura
+            + foto
             <input type="file" name="photo" accept="image/*" class="hidden"
+                   onchange="this.form.submit()">
+          </label>
+        </form>
+        <form method="post" action="/kniha-jizd/services/{{ record.id }}/documents"
+              enctype="multipart/form-data" class="mt-1">
+          {{ csrf_field(request) }}
+          <label class="text-xs text-accent hover:underline cursor-pointer">
+            + doklad (PDF)
+            <input type="file" name="document" accept=".pdf,image/*" class="hidden"
                    onchange="this.form.submit()">
           </label>
         </form>

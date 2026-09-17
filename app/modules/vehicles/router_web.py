@@ -34,8 +34,11 @@ from app.modules.approvals import repository as approvals_repository
 from app.modules.approvals import service as approvals_service
 from app.modules.defects import repository as defects_repository
 from app.modules.documents import repository as documents_repository
+from app.modules.expenses import repository as expenses_repository
 from app.modules.fuelings import repository as fuelings_repository
 from app.modules.services import repository as services_repository
+from app.modules.wheels import repository as wheels_repository
+from app.modules.wheels import service as wheels_service
 from app.modules.trips import repository as trips_repository
 from app.modules.vehicles import repository, service
 from app.modules.vehicles.schemas import VehicleCreate, VehicleUpdate
@@ -244,6 +247,10 @@ async def vehicle_detail(
         service_totals=await services_repository.totals_for_vehicle(db, vehicle.id),
         last_services=await services_repository.list_for_vehicle(db, vehicle.id),
         documents=await documents_repository.list_for_vehicle(db, vehicle.id),
+        active_fitment=await wheels_repository.get_active_fitment(db, vehicle.id),
+        wheels_service=wheels_service,
+        expense_totals=await expenses_repository.combined_totals(db, vehicle.id),
+        recent_expenses=await expenses_repository.list_for_vehicle(db, vehicle.id, limit=3),
     )
 
 

@@ -20,8 +20,11 @@ from app.models.fleet import (  # noqa: F401 - imported for Alembic metadata
     VehicleAssignment,
     VehicleDefect,
     VehicleDocument,
+    VehicleExpense,
     VehicleReservation,
     VehicleService,
+    WheelFitment,
+    WheelSet,
 )
 
 __all__ = ["Base"]

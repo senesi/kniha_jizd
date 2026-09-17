@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import deadline_row, status_badge %}
-{% from "_vehicle.html" import thumb, visibility_badge, approval_badge, defect_priority, defect_status %}
+{% from "_vehicle.html" import thumb, visibility_badge, approval_badge, defect_priority, defect_status, wheel_badge %}
 {% block title %}{{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -129,6 +129,38 @@
     {% for status in deadlines %}{{ deadline_row(status) }}{% endfor %}
   </div>
 </div>
+
+<!-- Kola (výrazně - řidič to potřebuje vidět na první pohled) -->
+<a href="/kniha-jizd/vehicles/{{ vehicle.id }}/wheels"
+   class="block rounded-2xl border-2 p-4 mb-4 hover:bg-surface/50
+          {% if active_fitment %}{% if active_fitment.wheel_set.season == 'winter' %}bg-info/10 border-info/40{% else %}bg-warning/10 border-warning/40{% endif %}{% else %}bg-surface border-divider{% endif %}">
+  {% if active_fitment %}
+  {% set current = active_fitment.wheel_set %}
+  <div class="flex items-center justify-between gap-3">
+    <div class="min-w-0">
+      <div class="text-lg font-extrabold">
+        🛞 Aktuálně: {{ "ZIMNÍ KOLA" if current.season == "winter" else "LETNÍ KOLA" }}
+      </div>
+      <div class="text-sm text-subtle mt-1">
+        {{ current.brand or "bez značky" }}{% if current.model %} {{ current.model }}{% endif %}
+        {%- if current.size %} · {{ current.size }}{% endif %}
+      </div>
+      <div class="text-xs text-muted2">
+        najeto {{ wheels_service.set_distance_km(current, vehicle.current_odometer_km) | km }} km
+        {% if current.age_years is not none %} · stáří {{ current.age_years }} let{% endif %}
+        {% if current.dot_code %} · DOT {{ current.dot_code }}{% endif %}
+        {% if current.tread_depth_mm %} · dezén {{ current.tread_depth_mm | liters }} mm{% endif %}
+      </div>
+    </div>
+    <span class="text-accent font-bold shrink-0">&rarr;</span>
+  </div>
+  {% else %}
+  <div class="flex items-center justify-between gap-3">
+    <div class="text-sm text-muted2">🛞 Kola nejsou evidovaná</div>
+    <span class="text-accent font-bold shrink-0">&rarr;</span>
+  </div>
+  {% endif %}
+</a>
 
 <!-- Pojištění: čísla, která řidič potřebuje při nehodě po ruce -->
 {% if vehicle.insurance_company or vehicle.insurance_policy_number %}
@@ -271,6 +303,25 @@
         {{ documents | length }} {% if documents | length == 1 %}dokument{% elif documents | length < 5 %}dokumenty{% else %}dokumentů{% endif %}
       </div>
       <div class="text-xs text-muted2">TP, OTP, zelená karta…</div>
+    </div>
+    <span class="text-accent font-bold shrink-0">&rarr;</span>
+  </a>
+
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses"
+     class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface sm:col-span-2">
+    <div class="min-w-0">
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Výdaje celkem</div>
+      <div class="text-lg font-extrabold">{{ expense_totals.total | money }} Kč</div>
+      <div class="text-xs text-muted2">
+        zapsané {{ expense_totals.expenses_amount | money }} Kč
+        + {{ fuel.refuel_noun(vehicle.fuel_type).lower() }} z jízd {{ expense_totals.fuelings_amount | money }} Kč
+      </div>
+      {% if recent_expenses %}
+      <div class="text-xs text-muted2 mt-1">
+        naposledy: {{ labels.EXPENSE_TYPE.get(recent_expenses[0].expense_type, recent_expenses[0].expense_type) }}
+        {{ recent_expenses[0].amount_czk | money }} Kč ({{ recent_expenses[0].expense_date | d }})
+      </div>
+      {% endif %}
     </div>
     <span class="text-accent font-bold shrink-0">&rarr;</span>
   </a>

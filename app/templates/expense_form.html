@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "_macros.html" import warning_box %}
+{% block title %}Nový výdaj &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% macro value_of(name) %}{{ form.get(name) if form.get(name) is not none else '' }}{% endmacro %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Nový výdaj</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses/new" enctype="multipart/form-data">
+  {{ csrf_field(request) }}
+  {{ warning_box(warnings) }}
+
+  {# Pořadí polí kopíruje mobilní scénář: vyfotit doklad, napsat částku,
+     uložit. Datum i tachometr jsou předvyplněné. #}
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Doklad</label>
+    <input class="kj-input !py-3" type="file" name="receipt" accept=".pdf,image/*" capture="environment">
+    <p class="text-xs text-muted mt-1">PDF nebo fotografie. Nepovinné – doklad lze doplnit i potom.</p>
+
+    <label class="kj-label">Částka celkem <span class="text-danger">*</span></label>
+    <div class="flex gap-2">
+      <input class="kj-input !text-2xl !font-extrabold !min-h-[60px]" type="text" inputmode="decimal"
+             name="amount_czk" required autofocus value="{{ value_of('amount_czk') }}" placeholder="1 250">
+      <select class="kj-input !w-24" name="currency">
+        {% for code in ["CZK", "EUR", "PLN"] %}
+        <option value="{{ code }}" {% if (form.get('currency') or 'CZK') == code %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <p class="text-xs text-muted mt-1">Částka s DPH. Rozpad na základ a DPH je nepovinný (níž).</p>
+  </div>
+
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Druh výdaje <span class="text-danger">*</span></label>
+    {% set chosen = form.get('expense_type') %}
+    <div class="grid grid-cols-2 gap-2">
+      {% for option in expense_types %}
+      <label class="flex items-center gap-2 rounded-xl border border-border2 bg-white px-3 py-2.5 cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5">
+        <input type="radio" name="expense_type" value="{{ option }}" required
+               class="w-4 h-4 text-accent focus:ring-accent"
+               data-expense-type="{{ option }}"
+               {% if option == chosen %}checked{% endif %}>
+        <span class="text-sm font-bold">{{ labels.EXPENSE_TYPE.get(option, option) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    {# Tankování během jízdy patří k jízdě, ne sem - jinak by se tatáž
+       útrata objevila dvakrát. #}
+    <div id="fuel-hint" class="hidden rounded-xl bg-info/10 border border-info/30 px-3 py-2.5 mt-3 text-xs text-subtle">
+      Tankovali jste během jízdy? Zapište to raději přímo u jízdy
+      (⛽ {{ fuel.refuel_noun(vehicle.fuel_type) }}) – přehled výdajů to načte automaticky
+      a nebudete mít jednu útratu dvakrát. Sem patří nákupy mimo jízdu, třeba faktura
+      za tankovací kartu.
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Datum <span class="text-danger">*</span></label>
+        <input class="kj-input" type="date" name="expense_date" required value="{{ value_of('expense_date') }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav tachometru</label>
+        <input class="kj-input" type="number" min="0" name="odometer_km" value="{{ value_of('odometer_km') }}">
+      </div>
+    </div>
+  </div>
+
+  <details class="kj-card mb-4" {% if form.get('supplier') or form.get('amount_net_czk') or form.get('trip_id') %}open{% endif %}>
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Dodavatel, DPH, jízda, poznámka</summary>
+
+    <label class="kj-label">Dodavatel</label>
+    <input class="kj-input" name="supplier" maxlength="255" value="{{ value_of('supplier') }}">
+
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Základ daně</label>
+        <input class="kj-input" type="text" inputmode="decimal" name="amount_net_czk"
+               value="{{ value_of('amount_net_czk') }}">
+      </div>
+      <div>
+        <label class="kj-label">DPH</label>
+        <input class="kj-input" type="text" inputmode="decimal" name="vat_czk" value="{{ value_of('vat_czk') }}">
+      </div>
+    </div>
+
+    {% if trips %}
+    <label class="kj-label">Navázat na jízdu</label>
+    <select class="kj-input" name="trip_id">
+      <option value="">— bez vazby —</option>
+      {% for trip in trips %}
+      <option value="{{ trip.id }}" {% if form.get('trip_id') == trip.id|string %}selected{% endif %}>
+        {{ trip.started_at | d }} · {{ trip.start_odometer_km | km }} km
+        {%- if trip.route_text %} · {{ trip.route_text[:40] }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <label class="kj-label">Poznámka</label>
+    <input class="kj-input" name="note" maxlength="500" value="{{ value_of('note') }}">
+  </details>
+
+  <button type="submit" class="kj-btn-hero">Uložit výdaj</button>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses" class="kj-btn-secondary w-full mt-2">Zrušit</a>
+</form>
+
+<script>
+  // Upozornění na duplicitu se ukáže jen u paliva a nabíjení.
+  const hint = document.getElementById("fuel-hint");
+  function syncHint(value) {
+    hint.classList.toggle("hidden", !["palivo", "nabijeni"].includes(value));
+  }
+  document.querySelectorAll("[data-expense-type]").forEach((radio) => {
+    radio.addEventListener("change", () => syncHint(radio.dataset.expenseType));
+    if (radio.checked) syncHint(radio.dataset.expenseType);
+  });
+</script>
+{% endblock %}

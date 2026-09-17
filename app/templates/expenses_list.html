@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Výdaje {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Výdaje</h1>
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-muted2 hover:text-accent">
+      {{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}
+    </a>
+  </div>
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses/new" class="kj-btn shrink-0">+ Výdaj</a>
+</div>
+
+<!-- Období -->
+<div class="flex flex-wrap gap-2 mb-4">
+  {% for range in quick_ranges %}
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses?date_from={{ range.date_from }}&date_to={{ range.date_to }}{% if expense_type %}&expense_type={{ expense_type }}{% endif %}"
+     class="kj-badge px-3 py-1.5 text-xs {% if date_from == range.date_from and date_to == range.date_to %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">
+    {{ range.label }}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Souhrn -->
+<div class="kj-card mb-4">
+  <div class="text-xs font-bold uppercase tracking-wide text-muted2">Celkem za období</div>
+  <div class="text-3xl font-extrabold mt-1">{{ totals.total | money }} <span class="text-base text-muted2">Kč</span></div>
+
+  <div class="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-divider-soft text-sm">
+    <div>
+      <div class="text-xs text-muted">Zapsané výdaje</div>
+      <div class="font-bold">{{ totals.expenses_amount | money }} Kč</div>
+    </div>
+    <div>
+      {# Tankování se do výdajů nepřepisuje - eviduje se u jízd. Do
+         celkových nákladů ale patří, jinak by přehled lhal. #}
+      <div class="text-xs text-muted">{{ fuel.refuel_noun(vehicle.fuel_type) }} z jízd</div>
+      <div class="font-bold">{{ totals.fuelings_amount | money }} Kč</div>
+      <div class="text-[11px] text-muted">{{ totals.fuelings_count }} záznamů</div>
+    </div>
+  </div>
+
+  {% if totals.by_type %}
+  <div class="mt-4 pt-4 border-t border-divider-soft">
+    <div class="text-xs text-muted mb-2">Podle druhu</div>
+    <div class="flex flex-wrap gap-1.5">
+      {% for row in totals.by_type %}
+      <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses?date_from={{ date_from }}&date_to={{ date_to }}&expense_type={{ row.expense_type }}"
+         class="kj-badge {% if expense_type == row.expense_type %}bg-accent text-white{% else %}bg-surface text-subtle border border-divider{% endif %}">
+        {{ labels.EXPENSE_TYPE.get(row.expense_type, row.expense_type) }}: {{ row.amount | money }} Kč
+      </a>
+      {% endfor %}
+      {% if expense_type %}
+      <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses?date_from={{ date_from }}&date_to={{ date_to }}"
+         class="kj-badge bg-white text-muted2 border border-border2">zrušit filtr</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if not expenses %}
+<div class="kj-card text-center text-muted2">
+  V tomto období není žádný zapsaný výdaj.
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses/new" class="block mt-3 font-bold text-accent hover:underline">
+    Přidat první
+  </a>
+</div>
+{% endif %}
+
+<div class="grid gap-2">
+  {% for expense in expenses %}
+  <div class="kj-card !p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="kj-badge bg-surface text-subtle border border-divider">
+            {{ labels.EXPENSE_TYPE.get(expense.expense_type, expense.expense_type) }}
+          </span>
+          <span class="text-sm font-bold">{{ expense.expense_date | d }}</span>
+        </div>
+        {% if expense.supplier %}
+        <div class="text-sm text-subtle mt-1">{{ expense.supplier }}</div>
+        {% endif %}
+        <div class="text-xs text-muted2">
+          {% if expense.odometer_km %}{{ expense.odometer_km | km }} km{% endif %}
+          {% if expense.trip_id %}
+          &middot; <a href="/kniha-jizd/trips/{{ expense.trip_id }}" class="text-accent hover:underline">z jízdy</a>
+          {% endif %}
+          {% if expense.creator %} &middot; {{ expense.creator.full_name }}{% endif %}
+        </div>
+        {% if expense.note %}<div class="text-xs text-muted2 mt-1">{{ expense.note }}</div>{% endif %}
+
+        {% if expense.receipts %}
+        <div class="flex flex-wrap gap-2 mt-2">
+          {% for receipt in expense.receipts %}
+          <a href="/kniha-jizd/documents/{{ receipt.id }}/file" target="_blank"
+             class="kj-badge bg-surface text-subtle border border-divider">
+            📄 {{ receipt.original_filename }}
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="text-right shrink-0">
+        <div class="text-lg font-extrabold">{{ expense.amount_czk | money }}</div>
+        <div class="text-xs text-muted2">{{ expense.currency }}</div>
+        {% if expense.amount_net_czk and expense.vat_czk %}
+        <div class="text-[11px] text-muted mt-1">
+          bez DPH {{ expense.amount_net_czk | money }}<br>DPH {{ expense.vat_czk | money }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/kniha-jizd/expenses/{{ expense.id }}/receipt"
+              enctype="multipart/form-data" class="mt-2">
+          {{ csrf_field(request) }}
+          <label class="text-xs text-accent hover:underline cursor-pointer">
+            + doklad
+            <input type="file" name="receipt" accept=".pdf,image/*" class="hidden" onchange="this.form.submit()">
+          </label>
+        </form>
+        <form method="post" action="/kniha-jizd/expenses/{{ expense.id }}/delete" class="mt-1">
+          {{ csrf_field(request) }}
+          <button type="submit" class="text-xs text-danger hover:underline">smazat</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

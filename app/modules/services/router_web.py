@@ -21,6 +21,9 @@ from app.core.photos import PhotoTooLarge, UnsupportedPhotoType
 from app.core.templates import render_page
 from app.models.core import User
 from app.models.fleet import SERVICE_TYPES, Vehicle
+from app.core.documents import DocumentTooLarge, UnsupportedDocumentType
+from app.modules.documents import repository as documents_repository
+from app.modules.documents import service as documents_service
 from app.modules.services import repository, service
 from app.modules.vehicles import repository as vehicles_repository
 
@@ -92,6 +95,10 @@ async def vehicle_services(
         request, "services_list.html", user, db,
         vehicle=vehicle,
         records=await repository.list_for_vehicle(db, vehicle.id),
+        service_documents={
+            record.id: await documents_repository.list_for_service(db, record.id)
+            for record in await repository.list_for_vehicle(db, vehicle.id)
+        },
         totals=await repository.totals_for_vehicle(db, vehicle.id),
         oil=oil_status(vehicle, thresholds),
         service_types=SERVICE_TYPES,
@@ -204,6 +211,44 @@ async def service_add_attachment(
     except (PhotoTooLarge, UnsupportedPhotoType) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return flash.redirect(f"/kniha-jizd/vehicles/{record.vehicle_id}/services", "photo_added")
+
+
+@services_router.post("/services/{service_id}/documents", dependencies=[Depends(verify_csrf)])
+async def service_add_document(
+    service_id: uuid.UUID,
+    document: UploadFile = File(...),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Doklad k servisu jako PLNOHODNOTNÝ dokument, tedy i PDF.
+
+    Fotografie faktury jde nahrát přes /attachments (obrázková pipeline
+    se zmenšováním), ale faktura přijatá e-mailem bývá PDF - to přes
+    obrázkovou cestu neprojde. Používá se stejné úložiště jako u
+    dokumentů vozidla: umí PDF, ověřuje magické bajty, dává souborům
+    náhodná jména a má autorizované stahování."""
+    record = await repository.get(db, service_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Záznam nebyl nalezen.")
+    codes = await get_user_permission_codes(db, user.id)
+    assert_vehicle_visible(codes, record.vehicle, user)
+    assert_vehicle_manage_access(codes, record.vehicle, user)
+
+    data = await document.read()
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vyberte soubor.")
+
+    try:
+        await documents_service.add_document(
+            db, vehicle=record.vehicle, actor=user, doc_type="faktura",
+            title=f"Doklad – {document.filename}", valid_from=None, valid_to=None, note=None,
+            filename=document.filename or "doklad", content_type=document.content_type, data=data,
+            service_id=record.id,
+        )
+    except (documents_service.DocumentError, DocumentTooLarge, UnsupportedDocumentType) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+    return flash.redirect(f"/kniha-jizd/vehicles/{record.vehicle_id}/services", "document_added")
 
 
 @services_router.post("/services/{service_id}/delete", dependencies=[Depends(verify_csrf)])

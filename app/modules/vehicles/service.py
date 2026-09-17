@@ -152,7 +152,8 @@ async def correct_odometer(
 async def add_attachment(
     db: AsyncSession, *, vehicle_id: uuid.UUID, kind: str, original_filename: str, content_type: str | None,
     data: bytes, actor_id: uuid.UUID, trip_id: uuid.UUID | None = None, defect_id: uuid.UUID | None = None,
-    service_id: uuid.UUID | None = None, fueling_id: uuid.UUID | None = None, note: str | None = None,
+    service_id: uuid.UUID | None = None, fueling_id: uuid.UUID | None = None,
+    wheel_set_id: uuid.UUID | None = None, note: str | None = None,
     commit: bool = True,
 ) -> Attachment:
     """Every image upload in the app goes through here - vehicle gallery,
@@ -169,7 +170,8 @@ async def add_attachment(
 
     attachment = Attachment(
         vehicle_id=vehicle_id, kind=kind, trip_id=trip_id, defect_id=defect_id, service_id=service_id,
-        fueling_id=fueling_id, original_filename=original_filename, thumbnail_path=thumbnail_filename,
+        fueling_id=fueling_id, wheel_set_id=wheel_set_id,
+        original_filename=original_filename, thumbnail_path=thumbnail_filename,
         full_path=full_filename, mime_type=content_type or f"image/{ext.lstrip('.')}", note=note,
         uploaded_by=actor_id,
     )

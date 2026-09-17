@@ -36,6 +36,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 4 | závady | **hotovo** |
 | 5 | tankování / nabíjení, účtenky, OCR infrastruktura | **hotovo**; chybí jen napojení skutečného OCR enginu (`OCR_PROVIDER=none`) |
 | 6 | servis a dokumenty vozidla | **hotovo** |
+| 6b | kola/pneumatiky a výdaje vozidla | **hotovo** (nad rámec původních etap) |
 | 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | neimplementováno |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
@@ -111,7 +112,7 @@ app/
   modules/     <modul>/{router_web,service,repository,schemas}.py
                hotové: auth, dashboard, vehicles, trips, reservations,
                defects, approvals, fuelings, services, documents,
-               users, notifications, settings
+               wheels, expenses, users, notifications, settings
   templates/   Jinja2, mobile-first, Tailwind přes CDN
   static/      vendorované JS (qr-scanner), favicony
 ```
