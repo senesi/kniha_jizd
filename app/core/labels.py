@@ -69,7 +69,10 @@ DEFECT_PRIORITY: dict[str, str] = {
 }
 
 SERVICE_TYPE: dict[str, str] = {
-    "vymena_oleje": "Výměna oleje",
+    # Ten úkon, který posouvá hlídaný servisní interval. U spalovacího
+    # vozu je to výměna oleje, u elektromobilu prohlídka a náplně -
+    # proto obecnější název.
+    "vymena_oleje": "Servisní prohlídka / olej",
     "filtry": "Filtry",
     "brzdy": "Brzdy",
     "pneumatiky": "Pneumatiky",
@@ -97,7 +100,7 @@ NOTIFICATION_KIND: dict[str, str] = {
     "stk": "STK",
     "vignette": "Dálniční známka",
     "insurance": "Pojištění",
-    "oil": "Výměna oleje",
+    "oil": "Servisní prohlídka",
     "approval_request": "Žádost o schválení",
     "approval_decision": "Rozhodnutí o žádosti",
 }

@@ -158,13 +158,15 @@
     <div><div class="text-xs text-muted">VIN</div><div class="font-semibold break-all">{{ vehicle.vin or "—" }}</div></div>
     <div><div class="text-xs text-muted">Typ</div><div class="font-semibold">{{ labels.VEHICLE_TYPE.get(vehicle.vehicle_type, vehicle.vehicle_type) }}</div></div>
     <div><div class="text-xs text-muted">Palivo</div><div class="font-semibold">{{ labels.FUEL_TYPE.get(vehicle.fuel_type, vehicle.fuel_type or "—") }}</div></div>
+    {# Kapacitu ukazovat jen tu, která k pohonu patří, a jen když je
+       vyplněná - prázdné „—" u elektromobilu s nádrží nikomu nepomůže. #}
+    {% set capacity, unit = fuel.capacity_for(vehicle) %}
+    {% if capacity %}
     <div>
       <div class="text-xs text-muted">{% if fuel.is_electric(vehicle.fuel_type) %}Kapacita baterie{% else %}Objem nádrže{% endif %}</div>
-      <div class="font-semibold">
-        {% set capacity, unit = fuel.capacity_for(vehicle) %}
-        {% if capacity %}{{ capacity | liters }} {{ unit }}{% else %}—{% endif %}
-      </div>
+      <div class="font-semibold">{{ capacity | liters }} {{ unit }}</div>
     </div>
+    {% endif %}
   </div>
   {% if vehicle.notes %}
   <div class="mt-4 pt-4 border-t border-divider-soft">

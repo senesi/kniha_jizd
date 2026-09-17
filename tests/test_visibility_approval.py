@@ -416,3 +416,81 @@ async def test_stranger_cannot_read_someone_elses_request(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as third:
         await login(third, stranger)
         assert (await third.get(f"/kniha-jizd/approvals/{request_id}")).status_code == 404
+
+
+# ======================================================================
+# Kapacita nádrže / baterie podle pohonu
+# ======================================================================
+
+async def test_capacity_fields_follow_the_drivetrain(logged_in_client, csrf_token):
+    """Kapacita se neřídí samostatným zaškrtávátkem, ale zvoleným
+    pohonem - typ paliva ten fakt už nese a druhý zdroj pravdy by se
+    dřív nebo později rozešel."""
+    electric = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="CAP-EL", license_plate="1CP 0001",
+        fuel_type="elektro", battery_capacity_kwh="77",
+    )
+    diesel = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="CAP-DI", license_plate="1CP 0002",
+        fuel_type="nafta", tank_capacity_l="50",
+    )
+    hybrid = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="CAP-HY", license_plate="1CP 0003",
+        fuel_type="hybrid", tank_capacity_l="40", battery_capacity_kwh="12",
+    )
+
+    # U elektromobilu je nádrž skrytá, baterie ne.
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{electric}/edit")
+    assert '<div data-capacity="fuel" class="hidden">' in form.text
+    assert '<div data-capacity="battery" >' in form.text
+
+    # U nafty obráceně.
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{diesel}/edit")
+    assert '<div data-capacity="fuel" >' in form.text
+    assert '<div data-capacity="battery" class="hidden">' in form.text
+
+    # Hybrid má obojí.
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{hybrid}/edit")
+    assert '<div data-capacity="fuel" >' in form.text
+    assert '<div data-capacity="battery" >' in form.text
+
+
+async def test_vehicle_card_shows_only_relevant_capacity(logged_in_client, csrf_token):
+    electric = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="CAP-C1", license_plate="1CP 0010",
+        fuel_type="elektro", battery_capacity_kwh="77",
+    )
+    card = await logged_in_client.get(f"/kniha-jizd/vehicles/{electric}")
+    assert "Kapacita baterie" in card.text
+    assert "77 kWh" in card.text
+    assert "Objem nádrže" not in card.text
+
+
+async def test_vehicle_card_hides_capacity_when_not_filled(logged_in_client, csrf_token):
+    """Prázdné „—" u kapacity nikomu nepomůže."""
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="CAP-C2", license_plate="1CP 0011", fuel_type="nafta",
+    )
+    card = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}")
+    assert "Objem nádrže" not in card.text
+    assert "Kapacita baterie" not in card.text
+
+
+async def test_switching_drivetrain_keeps_stored_capacity(logged_in_client, csrf_token):
+    """Přepnutí nafty na elektro nesmí o zadaný objem nádrže přijít -
+    pole se jen skryje, hodnota zůstává."""
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="CAP-SW", license_plate="1CP 0012",
+        fuel_type="nafta", tank_capacity_l="50",
+    )
+    await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/edit",
+        data={"csrf_token": csrf_token, "internal_code": "CAP-SW", "license_plate": "1CP 0012",
+              "brand": "Škoda", "model": "Octavia", "vehicle_type": "osobni", "status": "available",
+              "is_active": "1", "visibility": "all", "fuel_type": "elektro",
+              "tank_capacity_l": "50", "battery_capacity_kwh": "77"},
+        follow_redirects=False,
+    )
+    vehicle = await _vehicle_row(vehicle_id)
+    assert float(vehicle.tank_capacity_l) == 50
+    assert float(vehicle.battery_capacity_kwh) == 77

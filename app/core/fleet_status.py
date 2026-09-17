@@ -102,7 +102,9 @@ def oil_status(vehicle: Vehicle, settings: dict[str, int], today: date | None = 
     every read from last_oil_change_* plus the intervals; never stored, so
     it can never go stale after an odometer update."""
     today = today or date.today()
-    label = "Výměna oleje"
+    # „Servisní prohlídka", ne „výměna oleje": interval platí i pro
+    # elektromobil, který olej nemá, ale prohlídku a náplně ano.
+    label = "Servisní prohlídka"
     has_km_rule = vehicle.oil_interval_km and vehicle.last_oil_change_km is not None
     has_time_rule = vehicle.oil_interval_months and vehicle.last_oil_change_at is not None
     if not has_km_rule and not has_time_rule:

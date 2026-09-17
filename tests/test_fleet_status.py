@@ -163,3 +163,10 @@ def test_format_quantity_is_czech():
     assert fuel.format_quantity(48.5, "l") == "48,5 l"
     assert fuel.format_quantity(37.25, "kWh") == "37,25 kWh"
     assert fuel.format_quantity(None, "l") == "-"
+
+
+def test_service_interval_label_works_for_electric_too():
+    """„Výměna oleje" u elektromobilu nedává smysl, ale interval prohlídky
+    ano - proto obecnější název."""
+    vehicle = _vehicle(last_oil_change_km=90000, oil_interval_km=15000)
+    assert oil_status(vehicle, DEFAULTS, TODAY).label == "Servisní prohlídka"

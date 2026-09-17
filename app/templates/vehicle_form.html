@@ -72,12 +72,17 @@
         </select>
         <p class="text-xs text-muted mt-1">U elektromobilu se místo tankování v litrech eviduje nabíjení v kWh.</p>
       </div>
-      <div>
+      {# Kapacita se řídí zvoleným pohonem, ne samostatným zaškrtávátkem:
+         typ paliva už ten fakt nese, a druhý zdroj pravdy o téže věci by
+         se dřív nebo později rozešel. U elektromobilu je nádrž nesmysl,
+         u nafty baterie; hybrid má obojí. Přepíná se i živě při změně
+         výběru (skript na konci formuláře). #}
+      <div data-capacity="fuel" {% if current_fuel == 'elektro' %}class="hidden"{% endif %}>
         <label class="kj-label">Objem nádrže (l)</label>
         <input class="kj-input" type="number" step="0.1" min="0" name="tank_capacity_l"
                value="{{ value_of('tank_capacity_l', vehicle.tank_capacity_l if vehicle) }}">
       </div>
-      <div>
+      <div data-capacity="battery" {% if current_fuel not in ['elektro', 'hybrid'] %}class="hidden"{% endif %}>
         <label class="kj-label">Kapacita baterie (kWh)</label>
         <input class="kj-input" type="number" step="0.1" min="0" name="battery_capacity_kwh"
                value="{{ value_of('battery_capacity_kwh', vehicle.battery_capacity_kwh if vehicle) }}">
@@ -184,16 +189,19 @@
   </div>
 
   <div class="kj-card mb-4">
-    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Servisní interval oleje</h2>
-    <p class="text-xs text-muted mt-1">Další termín se dopočítá sám - platí ten z obou intervalů, který nastane dřív.</p>
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Servisní interval</h2>
+    <p class="text-xs text-muted mt-1">
+      Další termín se dopočítá sám – platí ten z obou intervalů, který nastane dřív.
+      U spalovacího vozu jde typicky o výměnu oleje, u elektromobilu o pravidelnou prohlídku.
+    </p>
     <div class="grid sm:grid-cols-2 gap-x-4">
       <div>
-        <label class="kj-label">Poslední výměna oleje (datum)</label>
+        <label class="kj-label">Poslední prohlídka / výměna oleje (datum)</label>
         <input class="kj-input" type="date" name="last_oil_change_at"
                value="{{ value_of('last_oil_change_at', vehicle.last_oil_change_at if vehicle) }}">
       </div>
       <div>
-        <label class="kj-label">Stav km při výměně</label>
+        <label class="kj-label">Stav km při poslední prohlídce</label>
         <input class="kj-input" type="number" min="0" name="last_oil_change_km"
                value="{{ value_of('last_oil_change_km', vehicle.last_oil_change_km if vehicle) }}">
       </div>
@@ -214,6 +222,24 @@
     <label class="kj-label mt-0">Poznámka</label>
     <textarea class="kj-input" name="notes" rows="3">{{ value_of('notes', vehicle.notes if vehicle) }}</textarea>
   </div>
+
+  <script>
+    // Kapacita nádrže / baterie se přepíná podle zvoleného pohonu.
+    // Skryté pole se neodesílá prázdné omylem - hodnotu si drží, takže
+    // přepnutí naftového vozu na elektro a zpět o zadaný objem nepřijde.
+    const fuelSelect = document.getElementById("fuel_type");
+    const tankBox = document.querySelector('[data-capacity="fuel"]');
+    const batteryBox = document.querySelector('[data-capacity="battery"]');
+
+    function syncCapacityFields() {
+      const value = fuelSelect.value;
+      tankBox.classList.toggle("hidden", value === "elektro");
+      batteryBox.classList.toggle("hidden", !["elektro", "hybrid"].includes(value));
+    }
+
+    fuelSelect.addEventListener("change", syncCapacityFields);
+    syncCapacityFields();
+  </script>
 
   <div class="flex gap-2">
     <button type="submit" class="kj-btn">{{ "Založit vozidlo" if not vehicle else "Uložit změny" }}</button>
