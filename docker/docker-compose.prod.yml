@@ -4,60 +4,67 @@
 # odtud. Žádné secrets tady nejsou - všechny jdou z
 # /opt/kniha_jizd/config/.env, který do Gitu nepatří.
 #
-# Na stejném stroji běží další nezávislé projekty (DSS, Evidence nářadí).
-# Tenhle soubor se smí dotýkat výhradně kontejnerů, sítě a volumes
-# Knihy jízd.
+# Na stejném stroji běží další nezávislé projekty (DSS, Evidence nářadí,
+# WebRTC drone). Tenhle soubor se smí dotýkat výhradně kontejnerů, sítě
+# a dat Knihy jízd.
+#
+# Struktura kopíruje Evidence nářadí (/opt/naradi/docker/) - stejná
+# konvence na stejném serveru se lépe spravuje než dvě různé.
 name: kniha-jizd
 
 services:
+  db:
+    image: postgres:17
+    container_name: kniha-jizd-postgres
+    restart: unless-stopped
+    # Bez `ports:` - databáze je dostupná jen uvnitř téhle sítě, nikdy
+    # z hostu a už vůbec ne zvenčí.
+    env_file:
+      - /opt/kniha_jizd/config/.env
+    # Bind mount, ne pojmenovaný volume: data jsou vidět na disku vedle
+    # fotografií a záloh, takže se zálohují a obnovují stejným způsobem
+    # jako zbytek projektu.
+    volumes:
+      - /opt/kniha_jizd/data/postgres:/var/lib/postgresql/data
+    networks:
+      - kniha-jizd-internal
+    healthcheck:
+      # $$ kvůli Compose - proměnnou má rozbalit shell v kontejneru, ne Compose.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
-      context: ..
+      context: /opt/kniha_jizd/app
       dockerfile: docker/Dockerfile
     image: kniha-jizd-app:latest
     container_name: kniha-jizd-app
     restart: unless-stopped
-    env_file:
-      - /opt/kniha_jizd/config/.env
-    # Jen na loopback. Ven vede pouze nginx na hostu, který na tenhle port
-    # proxuje /kniha-jizd/ - aplikace ani databáze nesmí být vidět přímo
+    # Jen na loopback. Ven vede pouze nginx na hostu, který sem proxuje
+    # /kniha-jizd/ - aplikace ani databáze nesmí být vidět přímo
     # z internetu (zadání 3).
     ports:
       - "127.0.0.1:8002:8000"
+    env_file:
+      - /opt/kniha_jizd/config/.env
     volumes:
       - /opt/kniha_jizd/data/photos:/opt/kniha_jizd/data/photos
       - /opt/kniha_jizd/data/documents:/opt/kniha_jizd/data/documents
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - kniha-jizd-internal
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
-  db:
-    image: postgres:17
-    container_name: kniha-jizd-postgres
-    restart: unless-stopped
-    # Bez `ports:` - databáze je dostupná jen uvnitř sítě tohoto stacku,
-    # nikdy z hostu a už vůbec ne zvenčí.
-    environment:
-      POSTGRES_DB: ${KJ_DB_NAME}
-      POSTGRES_USER: ${KJ_DB_USER}
-      POSTGRES_PASSWORD: ${KJ_DB_PASSWORD}
-    env_file:
-      - /opt/kniha_jizd/config/.env
-    volumes:
-      - kniha_jizd_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${KJ_DB_USER} -d ${KJ_DB_NAME}"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
       interval: 10s
       timeout: 5s
       retries: 5
 
-volumes:
-  # Pojmenovaný volume - persistentní data, která deploy kódu nikdy
-  # nemaže ani nerecykluje.
-  kniha_jizd_pgdata:
+networks:
+  # Vlastní síť - kontejnery Knihy jízd nevidí na databáze ostatních
+  # projektů a naopak.
+  kniha-jizd-internal:
+    driver: bridge
