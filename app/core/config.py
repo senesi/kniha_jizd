@@ -22,12 +22,12 @@ class Settings(BaseSettings):
     environment: str = "production"
 
     # Photo attachments (odometer shots, fuel receipts, defect photos,
-    # vehicle/service photos). Matches /opt/kniha-jizd/data/photos on the VPS.
-    photos_dir: str = "/opt/kniha-jizd/data/photos"
+    # vehicle/service photos). Matches /opt/kniha_jizd/data/photos on the VPS.
+    photos_dir: str = "/opt/kniha_jizd/data/photos"
     # Vehicle documents (TP/OTP/green card/...) - PDFs and images alike, kept
     # apart from photos because they are never resized and are served under
     # a stricter permission gate.
-    documents_dir: str = "/opt/kniha-jizd/data/documents"
+    documents_dir: str = "/opt/kniha_jizd/data/documents"
 
     # --- E-mail notifications (Etapa 7) --------------------------------
     # With smtp_host empty the app still records every notification in the

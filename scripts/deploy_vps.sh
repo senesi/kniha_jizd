@@ -6,10 +6,10 @@
 # pushi neexistuje.
 #
 # Použití (na VPS):
-#   cd /opt/kniha-jizd/app && ./scripts/deploy_vps.sh
+#   cd /opt/kniha_jizd/app && ./scripts/deploy_vps.sh
 #
 # Tenhle skript se nikdy nedotkne jiného projektu na sdíleném VPS
-# (DSS, Evidence nářadí) - pracuje výhradně pod /opt/kniha-jizd a
+# (DSS, Evidence nářadí) - pracuje výhradně pod /opt/kniha_jizd a
 # restartuje výhradně kontejner kniha-jizd-app.
 #
 # Pojistky:
@@ -21,10 +21,10 @@
 #   - nikdy nerestartuje kniha-jizd-postgres a nesahá na jeho volume
 set -euo pipefail
 
-APP_DIR="/opt/kniha-jizd/app"
-DOCKER_DIR="/opt/kniha-jizd/docker"
-BACKUP_DIR="/opt/kniha-jizd/backups/postgres"
-ENV_FILE="/opt/kniha-jizd/config/.env"
+APP_DIR="/opt/kniha_jizd/app"
+DOCKER_DIR="/opt/kniha_jizd/docker"
+BACKUP_DIR="/opt/kniha_jizd/backups/postgres"
+ENV_FILE="/opt/kniha_jizd/config/.env"
 HEALTHZ_URL="http://127.0.0.1:8002/healthz"
 DB_NAME="kniha_jizd"
 DB_USER="kniha_jizd_app"

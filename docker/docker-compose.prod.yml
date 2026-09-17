@@ -1,8 +1,8 @@
 # Produkční stack Knihy jízd na sdíleném VPS.
 #
-# Na VPS leží jako /opt/kniha-jizd/docker/docker-compose.yml a spouští se
+# Na VPS leží jako /opt/kniha_jizd/docker/docker-compose.yml a spouští se
 # odtud. Žádné secrets tady nejsou - všechny jdou z
-# /opt/kniha-jizd/config/.env, který do Gitu nepatří.
+# /opt/kniha_jizd/config/.env, který do Gitu nepatří.
 #
 # Na stejném stroji běží další nezávislé projekty (DSS, Evidence nářadí).
 # Tenhle soubor se smí dotýkat výhradně kontejnerů, sítě a volumes
@@ -18,15 +18,15 @@ services:
     container_name: kniha-jizd-app
     restart: unless-stopped
     env_file:
-      - /opt/kniha-jizd/config/.env
+      - /opt/kniha_jizd/config/.env
     # Jen na loopback. Ven vede pouze nginx na hostu, který na tenhle port
     # proxuje /kniha-jizd/ - aplikace ani databáze nesmí být vidět přímo
     # z internetu (zadání 3).
     ports:
       - "127.0.0.1:8002:8000"
     volumes:
-      - /opt/kniha-jizd/data/photos:/opt/kniha-jizd/data/photos
-      - /opt/kniha-jizd/data/documents:/opt/kniha-jizd/data/documents
+      - /opt/kniha_jizd/data/photos:/opt/kniha_jizd/data/photos
+      - /opt/kniha_jizd/data/documents:/opt/kniha_jizd/data/documents
     depends_on:
       db:
         condition: service_healthy
@@ -48,7 +48,7 @@ services:
       POSTGRES_USER: ${KJ_DB_USER}
       POSTGRES_PASSWORD: ${KJ_DB_PASSWORD}
     env_file:
-      - /opt/kniha-jizd/config/.env
+      - /opt/kniha_jizd/config/.env
     volumes:
       - kniha_jizd_pgdata:/var/lib/postgresql/data
     healthcheck:
