@@ -26,7 +26,7 @@ __all__ = [
     "ALLOWED_PHOTO_EXTENSIONS", "MAX_PHOTO_UPLOAD_BYTES", "PhotoTooLarge", "UnsupportedPhotoType",
     "DuplicateInternalCode", "OdometerCorrectionError",
     "generate_qr_token", "create_vehicle", "update_vehicle", "correct_odometer",
-    "add_attachment", "link_attachment_to_trip", "delete_attachment",
+    "add_attachment", "link_attachment_to_trip", "link_attachment_to_fueling", "delete_attachment",
 ]
 
 
@@ -206,6 +206,25 @@ async def link_attachment_to_trip(
     if attachment is None or attachment.vehicle_id != vehicle_id or attachment.deleted_at is not None:
         raise ValueError("Fotografie k tomuto vozidlu nebyla nalezena.")
     attachment.trip_id = trip_id
+    await db.flush()
+    if commit:
+        await db.commit()
+
+
+async def link_attachment_to_fueling(
+    db: AsyncSession, *, attachment_id: uuid.UUID, vehicle_id: uuid.UUID, trip_id: uuid.UUID,
+    fueling_id: uuid.UUID, commit: bool = False,
+) -> None:
+    """Přiřadí už nahranou účtenku ke vzniklému tankování.
+
+    Potřeba ze stejného důvodu jako link_attachment_to_trip: při
+    potvrzování OCR se účtenka nahraje dřív, než tankování existuje.
+    Kontrola vozidla brání přivlastnění cizí přílohy podvrženým id."""
+    attachment = await db.get(Attachment, attachment_id)
+    if attachment is None or attachment.vehicle_id != vehicle_id or attachment.deleted_at is not None:
+        raise ValueError("Účtenka k tomuto vozidlu nebyla nalezena.")
+    attachment.trip_id = trip_id
+    attachment.fueling_id = fueling_id
     await db.flush()
     if commit:
         await db.commit()

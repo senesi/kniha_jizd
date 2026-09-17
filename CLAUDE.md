@@ -34,7 +34,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 2 | výpůjčky (start/konec, km, nádrž, tachometr, foto, účel, trasa, další řidiči) | **hotovo** |
 | 3 | rezervace a kalendář | **hotovo** |
 | 4 | závady | **hotovo** |
-| 5 | tankování / nabíjení, účtenky, OCR infrastruktura | model + rozhraní `app/core/ocr.py` hotové, chybí poskytovatel a samotné tankování |
+| 5 | tankování / nabíjení, účtenky, OCR infrastruktura | **hotovo**; chybí jen napojení skutečného OCR enginu (`OCR_PROVIDER=none`) |
 | 6 | servis a dokumenty vozidla | připraveno v modelu |
 | 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | neimplementováno |
@@ -110,7 +110,8 @@ app/
                fleet.py (celá doména vozidel)
   modules/     <modul>/{router_web,service,repository,schemas}.py
                hotové: auth, dashboard, vehicles, trips, reservations,
-               defects, approvals, users, notifications, settings
+               defects, approvals, fuelings, users, notifications,
+               settings
   templates/   Jinja2, mobile-first, Tailwind přes CDN
   static/      vendorované JS (qr-scanner), favicony
 ```

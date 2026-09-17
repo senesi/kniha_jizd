@@ -38,6 +38,8 @@ MESSAGES: dict[str, str] = {
     "approval_needed": "Toto vozidlo vyžaduje schválení – nejdřív odešlete žádost.",
     "defect_reported": "Závada byla nahlášena.",
     "defect_updated": "Závada byla aktualizována.",
+    "fueling_added": "Záznam byl uložen.",
+    "fueling_deleted": "Záznam byl smazán.",
 }
 
 

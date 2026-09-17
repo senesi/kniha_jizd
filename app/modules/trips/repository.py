@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.core import User
-from app.models.fleet import Trip, TripDriver, Vehicle
+from app.models.fleet import Trip, TripDriver, TripFueling, Vehicle
 
 
 def _trip_load_options():
@@ -13,7 +13,10 @@ def _trip_load_options():
         selectinload(Trip.vehicle),
         selectinload(Trip.primary_driver),
         selectinload(Trip.extra_drivers).selectinload(TripDriver.user),
-        selectinload(Trip.fuelings),
+        # Účtenky se vykreslují v detailu jízdy, takže musí jít s sebou -
+        # jinak si je šablona dotáhne až při renderu, mimo async kontext,
+        # a stránka spadne na MissingGreenlet (viz ROZHODNUTI.md R21).
+        selectinload(Trip.fuelings).selectinload(TripFueling.receipts),
         selectinload(Trip.notes),
         selectinload(Trip.photos),
     )

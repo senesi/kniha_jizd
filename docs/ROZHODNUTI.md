@@ -357,8 +357,67 @@ se vykreslují makrem `thumb()`, musí vozidlo načítat
 
 **Proč to hlídat.** Bez toho se galerie dotahuje až v šabloně, tedy mimo
 async kontext, a stránka spadne na `MissingGreenlet` — ne na chybějící
-obrázek. Objevilo se to hned u seznamu žádostí a závad. Když přibude
-další místo s náhledem, je tohle první věc ke kontrole.
+obrázek. Objevilo se to u seznamu žádostí, u závad a znovu u účtenek
+v detailu jízdy (`Trip.fuelings` → `TripFueling.receipts`).
+
+**Obecné pravidlo:** cokoliv, co šablona projde cyklem, musí být
+načtené dopředu — včetně vnořené úrovně. `selectinload(A.b)` nestačí,
+když se vykresluje `a.b[i].c`; musí to být
+`selectinload(A.b).selectinload(B.c)`. Na async session to není
+optimalizace, ale podmínka funkčnosti. Je to nejčastější chyba v tomhle
+projektu — při přidání sekce do šablony je to první věc ke kontrole.
 
 **Bez fotky** se kreslí neutrální silueta auta, ne prázdné místo: řidič
 musí poznat, že fotka chybí, a ne že se nenačetla.
+
+---
+
+## R22 — Tankování a nabíjení mají jeden formulář
+
+**Rozhodnutí.** `app/modules/fuelings/` obsluhuje obojí. O jednotce a
+názvosloví rozhoduje výhradně `app/core/fuel.py` (viz R1); modul sám se
+na `fuel_type` neptá. U elektromobilu se litry vůbec nenabídnou a
+podvržená jednotka ve formuláři je odmítnuta na serveru, ne jen skrytá
+v UI.
+
+**Povinné je jen datum a množství.** Cena, cena za jednotku, stanice,
+stav km, druh paliva, účtenka i poznámka jsou nepovinné a schované pod
+rozbalovátkem — zadání 15 to tak chce a řidič u pumpy nemá čas na
+dvacet polí.
+
+**Cena za jednotku se dopočítá, ale nikdy nepřepíše.** Když ji uživatel
+zadá, platí jeho hodnota: na účtence bývá zaokrouhleno jinak, než by
+vyšlo z dělení.
+
+**Dva stropy, ne jeden.** `fueling_max_liters` (300) a
+`charging_max_kwh` (250) jsou samostatná nastavení — 280 kWh je zjevná
+chyba, 280 litrů u nákladního auta ne.
+
+**Co blokuje a co jen varuje** (zadání 32):
+- tvrdě: chybějící datum či množství, množství ≤ 0, datum v
+  budoucnosti, množství nad stropem, jednotka, kterou vozidlo nemá
+- varováním: množství nad kapacitu nádrže/baterie (kanystr je
+  legitimní), stav km nižší než na začátku jízdy
+
+---
+
+## R23 — OCR účtenky: parser je oddělený od enginu
+
+**Rozhodnutí.** `ocr.parse_receipt_text()` je čistá funkce nad
+rozpoznaným textem, `ocr.read_receipt()` jen obaluje engine. Žádné pole
+v `ReceiptReading` není povinné.
+
+**Proč to dělit.** Chyby nevznikají v engine, ale při čtení českých
+účtenek: desetinná čárka, mezera v tisících (`1 887,15`), jednotka
+přilepená k číslu, a hlavně tiskárny na pumpách, které neumí
+diakritiku (`Kc/l` místo `Kč/l`). Tohle všechno se dá testovat bez
+jakéhokoliv OCR enginu — a testuje se.
+
+**Nikdy se neuloží samo.** Přečtené hodnoty se zobrazí jako návrh s
+tlačítkem „Vyplnit těmito hodnotami"; uživatel je může přepsat a pak
+formulář teprve odešle. Uložení nese `ocr_confirmed=True` jako
+provenienci — ne jako důvod přeskočit validaci.
+
+**Účtenka se ukládá dřív než tankování**, stejně jako fotka tachometru
+u jízdy (R11) a ze stejného důvodu: `<input type="file">` nejde
+předvyplnit, takže by se mezi krokem „ukaž návrh" a „potvrď" ztratila.

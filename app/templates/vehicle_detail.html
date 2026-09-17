@@ -245,6 +245,49 @@
   {% endif %}
 </div>
 
+<!-- Tankování / nabíjení -->
+{% if recent_fuelings or fueling_totals %}
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">
+    {{ fuel.refuel_noun(vehicle.fuel_type) }}
+  </h2>
+  {% if fueling_totals %}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4 pb-4 border-b border-divider-soft">
+    {% for total in fueling_totals %}
+    <div>
+      <div class="text-xs text-muted">Celkem {{ total.unit }}</div>
+      <div class="text-lg font-extrabold">{{ fuel.format_quantity(total.quantity, total.unit) }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted">Za {{ total.count }} záznamů</div>
+      <div class="text-lg font-extrabold">{{ total.price | money if total.price else "—" }}{% if total.price %} Kč{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if recent_fuelings %}
+  <ul class="divide-y divide-divider-soft">
+    {% for fueling in recent_fuelings %}
+    <li class="flex items-center justify-between gap-3 py-2">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold">{{ fuel.format_quantity(fueling.quantity, fueling.unit) }}</div>
+        <div class="text-xs text-muted2 truncate">
+          {{ fueling.fueled_at | d }}{% if fueling.station %} &middot; {{ fueling.station }}{% endif %}
+        </div>
+      </div>
+      <div class="text-right shrink-0">
+        {% if fueling.price_total_czk %}
+        <div class="text-sm font-bold">{{ fueling.price_total_czk | money }} Kč</div>
+        {% endif %}
+        <a href="/kniha-jizd/trips/{{ fueling.trip_id }}" class="text-xs text-accent hover:underline">jízda</a>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Poslední jízdy -->
 <div class="kj-card mb-4">
   <div class="flex items-center justify-between gap-3 mb-3">

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% from "_macros.html" import warning_box %}
+{% block title %}{{ fuel.refuel_noun(vehicle.fuel_type) }} &ndash; {{ vehicle.license_plate }}{% endblock %}
+
+{% macro value_of(name) %}{{ form.get(name) if form.get(name) is not none else '' }}{% endmacro %}
+
+{% block content %}
+{% set noun = fuel.refuel_noun(vehicle.fuel_type) %}
+{% set unit = form.get('unit') or default_unit %}
+
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">{{ noun }}</h1>
+    <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
+  </div>
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/kniha-jizd/trips/{{ trip.id }}/fuelings/new" enctype="multipart/form-data">
+  {{ csrf_field(request) }}
+  {% if receipt_attachment_id %}
+  <input type="hidden" name="receipt_attachment_id" value="{{ receipt_attachment_id }}">
+  {% endif %}
+
+  {{ warning_box(warnings) }}
+
+  {# Návrh z účtenky. Nikdy se neuloží sám - uživatel ho musí přenést do
+     polí (zadání 15/25). #}
+  {% if ocr_suggestion %}
+  <div class="rounded-xl bg-info/10 border border-info/40 px-4 py-3 mb-4">
+    <p class="text-sm font-bold text-info mb-2">Z účtenky jsme přečetli:</p>
+    <ul class="text-sm text-subtle space-y-1">
+      {% if ocr_suggestion.fueled_at %}<li>Datum: <strong>{{ ocr_suggestion.fueled_at | d }}</strong></li>{% endif %}
+      {% if ocr_suggestion.quantity %}<li>Množství: <strong>{{ fuel.format_quantity(ocr_suggestion.quantity, ocr_suggestion.unit or unit) }}</strong></li>{% endif %}
+      {% if ocr_suggestion.price_per_unit_czk %}<li>Cena za jednotku: <strong>{{ ocr_suggestion.price_per_unit_czk | money }} Kč</strong></li>{% endif %}
+      {% if ocr_suggestion.price_total_czk %}<li>Celkem: <strong>{{ ocr_suggestion.price_total_czk | money }} Kč</strong></li>{% endif %}
+    </ul>
+    <button type="button" id="ocr-apply" class="kj-btn-secondary !min-h-[38px] !text-sm mt-3">
+      Vyplnit těmito hodnotami
+    </button>
+    <input type="hidden" name="confirm" value="ocr">
+    <p class="text-xs text-muted mt-2">
+      Zkontrolujte hodnoty a případně je přepište – OCR je pomocník, ne autorita.
+      Účtenka se uloží bez ohledu na to, co vyberete.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="kj-card mb-4">
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label mt-0">Datum <span class="text-danger">*</span></label>
+        <input class="kj-input" type="date" name="fueled_at" required
+               data-ocr-field="fueled_at" value="{{ value_of('fueled_at') }}">
+      </div>
+      <div>
+        <label class="kj-label mt-0">{{ fuel.quantity_label(unit) }} <span class="text-danger">*</span></label>
+        <div class="flex gap-2">
+          <input class="kj-input !text-xl !font-extrabold" type="text" inputmode="decimal" name="quantity" required
+                 data-ocr-field="quantity" value="{{ value_of('quantity') }}" placeholder="48,5">
+          {% if units | length > 1 %}
+          {# Plug-in hybrid dělá obojí - musí si vybrat. #}
+          <select class="kj-input !w-24" name="unit" data-ocr-field="unit">
+            {% for option in units %}
+            <option value="{{ option }}" {% if option == unit %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="hidden" name="unit" value="{{ units[0] }}">
+          <span class="flex items-center px-3 font-bold text-muted2">{{ units[0] }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <p class="text-xs text-muted mt-2">Stačí datum a množství. Ostatní je nepovinné.</p>
+  </div>
+
+  <details class="kj-card mb-4" {% if form.get('price_total_czk') or form.get('station') or ocr_suggestion %}open{% endif %}>
+    <summary class="text-sm font-bold text-subtle cursor-pointer">Cena, stanice a další údaje</summary>
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      <div>
+        <label class="kj-label">Celková cena (Kč)</label>
+        <input class="kj-input" type="text" inputmode="decimal" name="price_total_czk"
+               data-ocr-field="price_total_czk" value="{{ value_of('price_total_czk') }}">
+      </div>
+      <div>
+        <label class="kj-label">{{ fuel.price_per_unit_label(unit) }} (Kč)</label>
+        <input class="kj-input" type="text" inputmode="decimal" name="price_per_unit_czk"
+               data-ocr-field="price_per_unit_czk" value="{{ value_of('price_per_unit_czk') }}">
+        <p class="text-xs text-muted mt-1">Když nevyplníte, dopočítá se z celkové ceny.</p>
+      </div>
+      <div>
+        <label class="kj-label">{{ fuel.station_label(vehicle.fuel_type) }}</label>
+        <input class="kj-input" name="station" maxlength="255"
+               data-ocr-field="station" value="{{ value_of('station') }}">
+      </div>
+      <div>
+        <label class="kj-label">Stav tachometru (km)</label>
+        <input class="kj-input" type="number" min="0" name="odometer_km" value="{{ value_of('odometer_km') }}">
+      </div>
+      {% if not fuel.is_electric(vehicle.fuel_type) %}
+      <div>
+        <label class="kj-label">Druh paliva</label>
+        <select class="kj-input" name="fuel_type">
+          <option value="">— podle vozidla —</option>
+          {% for option in fuel_types %}
+          <option value="{{ option }}" {% if option == form.get('fuel_type') %}selected{% endif %}>
+            {{ labels.FUEL_TYPE.get(option, option) }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+    </div>
+    <label class="kj-label">Poznámka</label>
+    <input class="kj-input" name="note" maxlength="500" value="{{ value_of('note') }}">
+  </details>
+
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Fotografie účtenky</label>
+    <input class="kj-input !py-3" type="file" name="receipt" accept="image/*" capture="environment">
+    <p class="text-xs text-muted mt-1">
+      {% if receipt_attachment_id %}Účtenka je už uložená – znovu ji fotit nemusíte.
+      {% else %}Nepovinné. Uloží se k jízdě jako doklad.{% endif %}
+    </p>
+  </div>
+
+  <button type="submit" class="kj-btn-hero">Uložit {{ noun.lower() }}</button>
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="kj-btn-secondary w-full mt-2">Zrušit</a>
+</form>
+
+{% if ocr_suggestion %}
+<script>
+  // Přenese přečtené hodnoty do formuláře. Nic neodesílá - uživatel je
+  // ještě může přepsat, než formulář potvrdí.
+  document.getElementById("ocr-apply").addEventListener("click", () => {
+    const values = {{ {
+      "fueled_at": ocr_suggestion.fueled_at.isoformat() if ocr_suggestion.fueled_at else none,
+      "quantity": ocr_suggestion.quantity,
+      "unit": ocr_suggestion.unit,
+      "price_total_czk": ocr_suggestion.price_total_czk,
+      "price_per_unit_czk": ocr_suggestion.price_per_unit_czk,
+      "station": ocr_suggestion.station,
+    } | tojson }};
+    for (const [name, value] of Object.entries(values)) {
+      if (value === null || value === undefined) continue;
+      const field = document.querySelector(`[data-ocr-field="${name}"]`);
+      if (field) field.value = value;
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}
