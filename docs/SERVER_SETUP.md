@@ -5,10 +5,9 @@ Přístup na VPS a produkční nasazení projektu **Kniha jízd**.
 Cílem je, aby se v dalších etapách nemuselo znovu zjišťovat, jak se na
 server připojit a co kde běží.
 
-> **Stav k 17. 9. 2026:** SSH ověřeno a server auditován (viz kapitola
-> 2). Z tohoto projektu na VPS zatím **nic neexistuje** — sekce
-> označené *(plán)* popisují, co se má vytvořit, ne co je ověřeno. Po
-> prvním úspěšném deployi se přepíšou podle skutečnosti.
+> **Stav k 17. 9. 2026: NASAZENO A BĚŽÍ.** Aplikace je dostupná na
+> <https://solareg.azunimb.cz/kniha-jizd/>. Vše níže je ověřený stav,
+> ne plán.
 
 ---
 
@@ -128,7 +127,7 @@ Když není jisté, jestli je zdroj sdílený, nebo patří jinému projektu —
 
 ---
 
-## 3. Struktura na VPS *(plán)*
+## 3. Struktura na VPS
 
 ```text
 /opt/kniha_jizd/
@@ -149,7 +148,7 @@ nesahá.
 
 ---
 
-## 4. Docker / Compose *(plán)*
+## 4. Docker / Compose
 
 Předloha je v repozitáři: `docker/docker-compose.prod.yml`. Na VPS leží
 jako `/opt/kniha_jizd/docker/docker-compose.yml`.
@@ -166,14 +165,14 @@ jako `/opt/kniha_jizd/docker/docker-compose.yml`.
   nářadí. Data jsou tak vidět na disku vedle záloh a zálohují se i
   obnovují jedním způsobem.
 - Aplikace běží jako neprivilegovaný uživatel (viz `docker/Dockerfile`).
-- Port `8002` je **předpoklad** — před prvním deployem ověřit, že je
-  volný (`ss -tulpn`), a případně zvolit jiný.
+- Port `8002` ověřen jako volný a použit.
 
 ---
 
-## 5. PostgreSQL *(plán)*
+## 5. PostgreSQL
 
-- Vlastní kontejner, vlastní volume, vlastní databáze `kniha_jizd`.
+- Vlastní kontejner `kniha-jizd-postgres`, vlastní bind mount, vlastní
+  databáze `kniha_jizd`. Schéma `core` (8 tabulek) + `fleet` (13).
 - **Nikdy** nepoužívat databázi ani volume jiného projektu.
 - Aplikace se připojuje účtem `kniha_jizd_app`, nikdy `postgres`. Ten
   účet je vlastníkem jediné databáze ve **vlastním** kontejneru, který
@@ -187,7 +186,7 @@ jako `/opt/kniha_jizd/docker/docker-compose.yml`.
 
 ---
 
-## 6. nginx a veřejná URL *(plán)*
+## 6. nginx a veřejná URL
 
 Veřejná adresa:
 
@@ -205,7 +204,11 @@ aplikace generuje do QR kódů odkazy s `http` místo `https` (proto
 uvicorn běží s `--proxy-headers --forwarded-allow-ips=*`, viz komentář
 v `docker/Dockerfile`).
 
-Na rozcestníku `solareg.azunimb.cz` musí přibýt položka **Kniha jízd**.
+**Rozcestník:** položka *Kniha jízd* zatím na `solareg.azunimb.cz`
+**není**. Kořen domény obsluhuje DSS a ten žádné aplikace nelistuje —
+nemá tam odkaz ani Evidence nářadí. Přidání by znamenalo zásah do
+cizího projektu bez existujícího vzoru, takže čeká na rozhodnutí.
+Aplikace je mezitím plně dostupná na své URL.
 
 Postup: `nginx -T` → přidat `location` do existujícího `server` bloku →
 `nginx -t` → `systemctl reload nginx`. Nikdy `restart`.
@@ -280,3 +283,39 @@ Pořadí, které respektuje pravidla výše:
 9. **Ověřit, že DSS, Evidence nářadí i WordPress běží beze změny.**
 10. Přepsat tenhle dokument podle skutečného stavu a odstranit značky
     *(plán)*.
+
+---
+
+## 10. Záznam prvního nasazení (17. 9. 2026)
+
+Commit `4c99f65`. Postup, který proběhl:
+
+1. push na GitHub → `git clone` do `/opt/kniha_jizd/app`
+2. `docker-compose.prod.yml` zkopírován do `docker/docker-compose.yml`
+3. `docker compose build app`
+4. `docker compose up -d db` → healthy
+5. migrace přes dočasný kontejner: `0001` → `0002`
+6. `docker compose up -d app` → healthy, `/healthz` vrací `{"status":"ok"}`
+7. první admin přes `scripts/create_admin.py` (heslo vygenerováno na serveru)
+8. nginx: routa přidána skriptem se zálohou do `/root/`, `nginx -t`, `reload`
+9. smoke test zvenčí přes HTTPS
+
+**Ověřeno po nasazení:** všech 6 kontejnerů ostatních projektů běží
+dál (DSS, Evidence nářadí, WebRTC drone), `nginx -t` v pořádku, DSS
+vrací 200, Evidence nářadí 307, WebRTC 200. V logu Knihy jízd žádná
+chyba.
+
+**Záloha nginx konfigurace** před zásahem:
+`/root/nginx-solareg-backup-20260917_071630.conf`.
+
+### Pozor při příštím deployi
+
+`scripts/deploy_vps.sh` počítá s tím, že vše už stojí. Pro běžnou
+změnu tedy stačí:
+
+```powershell
+ssh.exe netcup-fve
+```
+```bash
+cd /opt/kniha_jizd/app && ./scripts/deploy_vps.sh
+```

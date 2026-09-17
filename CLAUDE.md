@@ -39,7 +39,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | neimplementováno |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
-| 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | Dockerfile hotový, **na VPS zatím nic nevzniklo** |
+| 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | **nasazeno a běží**; zbývá položka v rozcestníku a pravidelné zálohy |
 
 Datový model (`app/models/fleet.py`) je navržený pro všechny etapy
 najednou, aby pozdější etapy nepotřebovaly přestavbu schématu. Migrace
@@ -50,9 +50,9 @@ tam, až modul vznikne.
 
 ## 3. Produkce
 
-- Adresář projektu na VPS: `/opt/kniha_jizd/` *(plán, zatím nevytvořeno)*.
-- Kontejnery *(plán)*: `kniha-jizd-app` (interní port 8000, publikovaný
-  jen na `127.0.0.1`) a `kniha-jizd-postgres`.
+- Adresář projektu na VPS: `/opt/kniha_jizd/`. **Nasazeno 17. 9. 2026**, běží na <https://solareg.azunimb.cz/kniha-jizd/>.
+- Kontejnery: `kniha-jizd-app` (`127.0.0.1:8002` → 8000) a
+  `kniha-jizd-postgres` (bez mapovaného portu).
 - Databáze: PostgreSQL, produkční databáze `kniha_jizd`.
 - Persistentní data:
   - `/opt/kniha_jizd/data/photos` — fotografie (tachometr, účtenky,
