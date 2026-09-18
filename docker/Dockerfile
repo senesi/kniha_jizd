@@ -13,6 +13,14 @@ FROM python:3.12-slim
 RUN groupadd --system --gid 1000 knihajizd && \
     useradd --system --uid 1000 --gid knihajizd --no-create-home --shell /usr/sbin/nologin knihajizd
 
+# DejaVu kvůli PDF exportu knihy jízd. Font, který reportlab přibaluje
+# (Bitstream Vera), nemá ě ř ů ť ď ň - české PDF by z něj vyšlo děravé.
+# Do repozitáře se žádný font nekopíruje, bere se z Debianu; bez něj
+# aplikace funguje dál, jen PDF přijde o diakritiku (app/core/pdf_font.py).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=builder /install /usr/local

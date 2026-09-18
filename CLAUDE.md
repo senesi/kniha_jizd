@@ -38,7 +38,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 6 | servis a dokumenty vozidla | **hotovo** |
 | 6b | kola/pneumatiky a výdaje vozidla | **hotovo** (nad rámec původních etap) |
 | 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
-| 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | neimplementováno |
+| 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | **hotovo** |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
 | 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | **nasazeno a běží**; zbývá položka v rozcestníku a pravidelné zálohy |
 
@@ -105,7 +105,8 @@ tam, až modul vznikne.
 app/
   core/        průřezové věci: config, db, deps (oprávnění), csrf, audit,
                photos, documents, previews (miniatury dokumentů),
-               mailer, app_settings, fleet_status
+               pdf_font (diakritika v PDF), mailer, app_settings,
+               fleet_status
                (semafor), fuel (l vs. kWh), ocr (pomůcka, ne závislost),
                labels, flash, templates
   models/      core.py (uživatelé, role, audit, nastavení)
@@ -113,7 +114,8 @@ app/
   modules/     <modul>/{router_web,service,repository,schemas}.py
                hotové: auth, dashboard, vehicles, trips, reservations,
                defects, approvals, fuelings, services, documents,
-               wheels, expenses, users, notifications, settings
+               wheels, expenses, logbook, users, notifications,
+               settings
   templates/   Jinja2, mobile-first, Tailwind přes CDN
   static/      vendorované JS (qr-scanner), favicony
 ```

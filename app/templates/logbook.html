@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% from "_vehicle.html" import thumb %}
+{% block title %}Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Kniha jízd</h1>
+    <p class="text-sm text-muted2">{{ period_label }}{% if not filter.is_empty %} &middot; filtrováno{% endif %}</p>
+  </div>
+</div>
+
+{# Filtr (zadání 22). GET formulář: výsledek jde poslat odkazem a vrátit
+   se na něj ze záložky - a export si pak vezme tytéž parametry. #}
+<form method="get" action="/kniha-jizd/logbook" class="kj-card mb-4">
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
+    <div>
+      <label class="kj-label mt-0">Od</label>
+      <input class="kj-input" type="date" name="from" value="{{ filter.date_from.isoformat() if filter.date_from else '' }}">
+    </div>
+    <div>
+      <label class="kj-label mt-0 sm:mt-0">Do</label>
+      <input class="kj-input" type="date" name="to" value="{{ filter.date_to.isoformat() if filter.date_to else '' }}">
+    </div>
+    <div>
+      <label class="kj-label lg:mt-0">Vozidlo</label>
+      <select class="kj-input" name="vehicle">
+        <option value="">Všechna vozidla</option>
+        {% for vehicle in vehicles %}
+        <option value="{{ vehicle.id }}" {% if filter.vehicle_id == vehicle.id %}selected{% endif %}>
+          {{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Řidič</label>
+      <select class="kj-input" name="driver">
+        <option value="">Všichni řidiči</option>
+        {% for driver in drivers %}
+        <option value="{{ driver.id }}" {% if filter.driver_id == driver.id %}selected{% endif %}>
+          {{ driver.full_name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Účel</label>
+      <select class="kj-input" name="purpose">
+        <option value="">Jakýkoliv účel</option>
+        {% for purpose in purposes %}
+        <option value="{{ purpose }}" {% if filter.purpose_code == purpose %}selected{% endif %}>
+          {{ labels.TRIP_PURPOSE.get(purpose, purpose) }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Stav jízdy</label>
+      <select class="kj-input" name="status">
+        <option value="">Jakýkoliv stav</option>
+        {% for status in statuses %}
+        <option value="{{ status }}" {% if filter.status == status %}selected{% endif %}>
+          {{ labels.TRIP_STATUS.get(status, status) }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2 mt-4">
+    <button type="submit" class="kj-btn">Zobrazit</button>
+    {% if not filter.is_empty %}
+    <a href="/kniha-jizd/logbook" class="kj-btn-secondary">Zrušit filtr</a>
+    {% endif %}
+  </div>
+</form>
+
+{# Souhrn za vyfiltrované období. Ujeté km jen z ukončených jízd - u
+   probíhající není konečný stav tachometru. #}
+<div class="kj-card mb-4">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Jízd</div>
+      <div class="text-2xl font-extrabold">{{ summary.count }}</div>
+      {% if summary.active %}
+      <div class="text-xs text-muted2">z toho {{ summary.active }} probíhá</div>
+      {% endif %}
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Ujeté km</div>
+      <div class="text-2xl font-extrabold">{{ summary.total_km | km }}</div>
+      <div class="text-xs text-muted2">jen ukončené jízdy</div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Tankování</div>
+      <div class="text-2xl font-extrabold">{{ summary.fuelings_count }}</div>
+    </div>
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Za palivo</div>
+      <div class="text-2xl font-extrabold">
+        {% if summary.fuelings_amount %}{{ summary.fuelings_amount | money }} <span class="text-sm text-muted2">Kč</span>
+        {% else %}<span class="text-muted text-base">–</span>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Export bere tytéž parametry jako výpis (zadání 23), jen bez
+     stránkování - stáhne se celé vyfiltrované období. #}
+  <div class="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-divider-soft">
+    <span class="text-xs font-bold uppercase tracking-wide text-muted2 mr-1">Export</span>
+    {% set export_query = filter.query_string(page=none) %}
+    {% for extension, caption in [("xlsx", "XLSX"), ("csv", "CSV"), ("pdf", "PDF")] %}
+    <a href="/kniha-jizd/logbook/export.{{ extension }}{% if export_query %}?{{ export_query }}{% endif %}"
+       class="kj-btn-secondary !min-h-[36px] !px-3 !text-sm">{{ caption }}</a>
+    {% endfor %}
+    <span class="text-xs text-muted">{{ total }} {{ "jízda" if total == 1 else "jízd" }} v aktuálním filtru</span>
+  </div>
+</div>
+
+{% if not trips %}
+<div class="kj-card text-center text-muted2">
+  {% if filter.is_empty %}Zatím není zapsaná žádná jízda.
+  {% else %}Zadanému filtru neodpovídá žádná jízda.{% endif %}
+</div>
+{% endif %}
+
+<div class="grid gap-2">
+  {% for trip in trips %}
+  <a href="/kniha-jizd/trips/{{ trip.id }}" class="kj-card !p-4 block hover:bg-surface">
+    <div class="flex items-start gap-3">
+      {{ thumb(trip.vehicle, "sm") }}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold">{{ trip.vehicle.license_plate }}</span>
+          <span class="kj-badge {% if trip.status == 'active' %}bg-ink text-white{% elif trip.status == 'cancelled' %}bg-surface text-muted2 border border-divider{% else %}bg-success/15 text-success{% endif %}">
+            {{ labels.TRIP_STATUS.get(trip.status, trip.status) }}
+          </span>
+          {% if trip.times_edited_at %}
+          <span class="kj-badge bg-warning/15 text-warning" title="Časy jízdy byly dodatečně opraveny">Upravené časy</span>
+          {% endif %}
+        </div>
+
+        <div class="text-sm text-subtle mt-1">
+          {{ trip.primary_driver.full_name if trip.primary_driver else "—" }}
+          {%- for extra in trip.extra_drivers %}{% if extra.user %}, {{ extra.user.full_name }}{% endif %}{% endfor %}
+        </div>
+
+        <div class="text-xs text-muted2 mt-1">
+          {{ trip.started_at | dt }}
+          {% if trip.ended_at %}&ndash; {{ trip.ended_at | dt }}{% else %}&ndash; probíhá{% endif %}
+        </div>
+
+        {% if trip.route_text %}
+        <div class="text-xs text-muted2 mt-1 truncate">{{ trip.route_text }}</div>
+        {% endif %}
+
+        <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
+          {% if trip.purpose_code %}
+          <span class="kj-badge bg-surface text-subtle border border-divider">
+            {{ labels.TRIP_PURPOSE.get(trip.purpose_code, trip.purpose_code) }}
+          </span>
+          {% endif %}
+          {% if trip.fuelings %}
+          <span class="kj-badge bg-accent/10 text-accent">
+            {{ trip.fuelings | length }}&times; {{ fuel.refuel_noun(trip.vehicle.fuel_type) | lower }}
+          </span>
+          {% endif %}
+          {% if trip.defects %}
+          <span class="kj-badge bg-danger/15 text-danger">{{ trip.defects | length }}&times; závada</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="text-right shrink-0">
+        {% if trip.end_odometer_km is not none %}
+        <div class="font-extrabold">{{ (trip.end_odometer_km - trip.start_odometer_km) | km }}</div>
+        <div class="text-xs text-muted2">km</div>
+        {% else %}
+        <div class="text-xs text-muted2">od {{ trip.start_odometer_km | km }} km</div>
+        {% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% if last_page > 1 %}
+<div class="flex items-center justify-between gap-3 mt-4">
+  {% set prev_query = filter.query_string(page=(filter.page - 1) if filter.page > 2 else none) %}
+  {% if filter.page > 1 %}
+  <a href="/kniha-jizd/logbook{% if prev_query %}?{{ prev_query }}{% endif %}" class="kj-btn-secondary">&larr; Předchozí</a>
+  {% else %}<span></span>{% endif %}
+
+  <span class="text-xs text-muted2">strana {{ filter.page }} z {{ last_page }}</span>
+
+  {% if filter.page < last_page %}
+  <a href="/kniha-jizd/logbook?{{ filter.query_string(page=filter.page + 1) }}" class="kj-btn-secondary">Další &rarr;</a>
+  {% else %}<span></span>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

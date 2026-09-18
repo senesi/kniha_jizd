@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     ocr_provider: str = "none"
     ocr_tesseract_cmd: str = ""
 
+    # --- PDF export (Etapa 8) -------------------------------------------
+    # Cesta k TTF fontu s českou diakritikou. V produkčním obrazu je
+    # DejaVu z balíčku fonts-dejavu-core a najde se sama; tohle je pro
+    # lokální vývoj na Windows, kde se dá ukázat třeba na
+    # C:\Windows\Fonts\arial.ttf. Prázdné = hledat obvyklá místa
+    # (app/core/pdf_font.py).
+    pdf_font_path: str = ""
+
     @property
     def photos_path(self) -> Path:
         return Path(self.photos_dir)

@@ -657,3 +657,92 @@ Router ani šablona o té volbě nevědí.
 
 **Co to vyřešilo navíc.** Formulář pro **založení** úkonu dosud bral jen
 `image/*`, takže PDF šlo přiložit až dodatečně ze seznamu. Teď jde rovnou.
+
+---
+
+## R34 — Filtr knihy jízd je jeden objekt, ne parametry rozstrkané po routách
+
+**Rozhodnutí.** `LogbookFilter` je zmrazená datová třída, kterou parsuje
+`from_params()` a spotřebovává jak výpis, tak export. Dotazy se skládají
+na jednom místě (`logbook/repository.py:_base_query`).
+
+**Proč.** Zadání 23 chce, aby export respektoval aktivní filtry. Kdyby
+si obrazovka skládala podmínky sama a export znovu, po prvním přidaném
+filtru se rozejdou — a uživatel dostane do XLSX jiná data, než jaká měl
+před sebou. Tohle není hypotetické riziko, je to nejčastější chyba
+tabulkových exportů.
+
+**Parsování je shovívavé.** Nesmyslné datum, neexistující UUID nebo
+vymyšlený kód účelu se zahodí a filtr se prostě nepoužije, místo 422.
+Kniha jízd se otevírá z odkazů a záložek; rozbitý parametr v URL nemá
+shodit stránku. Obrácené období se prohodí — očividně to tak bylo
+myšleno.
+
+**Viditelnost je součástí dotazu, ne šablony.** Skryté vozidlo
+(požadavek D) musí zmizet i ze součtů, z nabídky ve filtru a hlavně ze
+staženého souboru. Filtrovat až při vykreslení by znamenalo, že v XLSX
+bude všechno.
+
+**Export bere celý rozsah, ne zobrazenou stránku.** Kdo si vyfiltruje
+čtvrtletí, čeká čtvrtletí. Stránkování je vlastnost obrazovky, ne dat.
+
+---
+
+## R35 — Sloupce exportu jsou definované jednou, PDF z nich bere podmnožinu
+
+**Rozhodnutí.** `export.COLUMNS` je jediný seznam; XLSX a CSV berou
+všechny, PDF ty označené `in_pdf`.
+
+**Proč PDF míň.** Osmnáct sloupců na šířku A4 dá písmo, které nikdo
+nepřečte. PDF je na čtení a na přílohu k vyúčtování; kdo potřebuje
+všechno, sáhne po XLSX.
+
+**XLSX drží čísla jako čísla**, ne jako formátovaný text — první věc,
+kterou v Excelu kdokoliv udělá, je součet sloupce ujetých km.
+
+**CSV má středník a BOM.** Český Excel otevře čárkové CSV jako jeden
+sloupec a bez BOM zobrazí diakritiku rozsypanou. Export, který se musí
+před použitím opravovat, je k ničemu.
+
+**Ujeté km se sčítají jen z ukončených jízd.** U probíhající není
+konečný stav tachometru, takže by do součtu vstoupila jako nula a tiše
+ho podhodnotila.
+
+---
+
+## R36 — Font pro PDF se bere z obrazu, ne z repozitáře
+
+**Rozhodnutí.** PDF export hledá font se vším, co čeština potřebuje, v
+tomhle pořadí: `PDF_FONT_PATH` z konfigurace → DejaVu z obrazu
+(`fonts-dejavu-core`, instalovaný v Dockerfile) → Bitstream Vera od
+reportlabu se složenou diakritikou.
+
+**Proč to vůbec řešit.** Reportlab umí ze standardních fontů jen
+WinAnsi a Vera, kterou přibaluje, **nemá ě ř ů ť ď ň**. České PDF by z
+ní vyšlo děravé zrovna ve slovech „Přehled", „Řidič", „Účel".
+
+**Proč ne font v Gitu.** Systémové fonty (Arial) se šířit nesmí a
+750 kB binárky v repozitáři není řešení, které by chtěl někdo udržovat.
+Debianí balíček je auditovatelný krok buildu, ne binárka bez původu.
+
+**Proč fallback, a ne chyba.** Export nesmí spadnout kvůli chybějícímu
+fontu. Třetí scénář vyrobí čitelné PDF s holými písmeny; je ošklivý,
+ale nastane jen v prostředí bez fontu — na produkci ne.
+
+---
+
+## R37 — Jízda skrytého vozidla neexistuje ani přes přímý odkaz
+
+**Rozhodnutí.** `trips/router_web.py:_load_trip` volá
+`assert_vehicle_visible`, takže detail jízdy i každá akce nad ní končí
+404, když uživatel nevidí vozidlo.
+
+**Proč.** Tohle byla díra, ne nová funkce: `/trips/{id}` dosud
+viditelnost vozidla nekontroloval vůbec. Kdokoliv přihlášený si mohl
+přímým odkazem otevřít jízdu skrytého vozidla i s trasou, řidiči a
+fotografiemi tachometru — přesně to, co požadavek D zakazuje. Našlo se
+to při psaní knihy jízd, která na detail jízdy odkazuje.
+
+**Proč v `_load_trip`.** Je to jediné místo, přes které chodí všech
+devět rout nad jízdou. Kontrola v každé z nich by byla devět příležitostí
+na jednu zapomenout.

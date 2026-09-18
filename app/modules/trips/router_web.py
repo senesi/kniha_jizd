@@ -45,10 +45,15 @@ async def _load_vehicle(db: AsyncSession, vehicle_id: uuid.UUID, *, user: User) 
     return vehicle
 
 
-async def _load_trip(db: AsyncSession, trip_id: uuid.UUID) -> Trip:
+async def _load_trip(db: AsyncSession, trip_id: uuid.UUID, *, user: User) -> Trip:
+    """Jízda skrytého vozidla neexistuje pro toho, kdo nevidí vozidlo
+    (požadavek D). Kontrola patří sem, protože tohle je jediné místo,
+    přes které chodí detail jízdy i všechny akce nad ní - jinak by se na
+    ni dalo dostat přímým odkazem i s trasou, řidiči a fotografiemi."""
     trip = await repository.get_trip(db, trip_id)
     if trip is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jízda nebyla nalezena.")
+    assert_vehicle_visible(await get_user_permission_codes(db, user.id), trip.vehicle, user)
     return trip
 
 
@@ -216,7 +221,7 @@ async def trip_detail(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     codes = await get_user_permission_codes(db, user.id)
     return await render_page(
         request, "trip_detail.html", user, db,
@@ -236,7 +241,7 @@ async def trip_end_form(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     await _assert_can_end(db, trip, user)
     if trip.status != "active":
         return flash.redirect(f"/kniha-jizd/trips/{trip.id}")
@@ -256,7 +261,7 @@ async def trip_end(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     await _assert_can_end(db, trip, user)
 
     form = await request.form()
@@ -324,7 +329,7 @@ async def trip_add_driver(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     await _assert_can_end(db, trip, user)
     try:
         await service.add_driver(db, trip=trip, user_id=driver_id, actor=user)
@@ -340,7 +345,7 @@ async def trip_remove_driver(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     await _assert_can_end(db, trip, user)
     try:
         await service.remove_driver(db, trip=trip, user_id=driver_id, actor=user)
@@ -356,7 +361,7 @@ async def trip_add_note(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     try:
         await service.add_note(db, trip=trip, text=text, actor=user)
     except service.TripError as error:
@@ -374,7 +379,7 @@ async def trip_cancel(
     codes = await get_user_permission_codes(db, user.id)
     if not ({MANAGE, MANAGE_ANY} & codes):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Nemáš oprávnění rušit jízdy.")
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     try:
         await service.cancel_trip(db, trip=trip, reason=reason, actor=user)
     except service.TripError as error:
@@ -411,7 +416,7 @@ async def trip_times_form(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     await _assert_can_edit_times(db, trip, user)
     return await render_page(
         request, "trip_times_edit.html", user, db,
@@ -426,7 +431,7 @@ async def trip_times_edit(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    trip = await _load_trip(db, trip_id)
+    trip = await _load_trip(db, trip_id, user=user)
     await _assert_can_edit_times(db, trip, user)
 
     form = await request.form()

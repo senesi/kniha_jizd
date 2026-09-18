@@ -14,6 +14,7 @@ from app.modules.defects.router_web import defects_router, vehicle_defects_route
 from app.modules.documents.router_web import documents_router, vehicle_documents_router
 from app.modules.expenses.router_web import expenses_router, vehicle_expenses_router
 from app.modules.fuelings.router_web import fuelings_router, trip_fuelings_router
+from app.modules.logbook.router_web import router as logbook_router
 from app.modules.services.router_web import services_router, vehicle_services_router
 from app.modules.wheels.router_web import vehicle_wheels_router, wheels_router
 from app.modules.dashboard.router_web import router as dashboard_web_router
@@ -105,6 +106,7 @@ app.include_router(vehicle_wheels_router, prefix="/kniha-jizd")
 app.include_router(wheels_router, prefix="/kniha-jizd")
 app.include_router(vehicle_expenses_router, prefix="/kniha-jizd")
 app.include_router(expenses_router, prefix="/kniha-jizd")
+app.include_router(logbook_router, prefix="/kniha-jizd")
 app.include_router(notifications_router, prefix="/kniha-jizd")
 app.include_router(settings_router, prefix="/kniha-jizd")
 app.include_router(users_router, prefix="/kniha-jizd")
