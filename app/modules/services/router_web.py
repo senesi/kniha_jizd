@@ -146,7 +146,8 @@ async def service_create(
     form = await request.form()
     payload = {
         "service_date": _text(form, "service_date"),
-        "service_type": _text(form, "service_type") or "",
+        # getlist: zaškrtávátka posílají jednu hodnotu na každý typ.
+        "service_types": [value for value in form.getlist("service_type") if isinstance(value, str)],
         "description": _text(form, "description") or "",
         "odometer_km": _text(form, "odometer_km"),
         "supplier": _text(form, "supplier"),
@@ -167,7 +168,7 @@ async def service_create(
         record = await service.add_service(
             db, vehicle=vehicle, actor=user,
             service_date=_to_date(payload["service_date"]),
-            service_type=payload["service_type"],
+            service_types=payload["service_types"],
             description=payload["description"],
             odometer_km=_to_int(payload["odometer_km"]),
             supplier=payload["supplier"],
@@ -181,7 +182,8 @@ async def service_create(
         return await rerender(None, [warning], status_code=200)
     except service.ServiceError as error:
         return await rerender(str(error), [])
-    except (PhotoTooLarge, UnsupportedPhotoType) as error:
+    except (PhotoTooLarge, UnsupportedPhotoType, documents_service.DocumentError,
+            DocumentTooLarge, UnsupportedDocumentType) as error:
         return await rerender(f"Fakturu se nepodařilo uložit: {error}", [])
 
     return flash.redirect(f"/kniha-jizd/vehicles/{vehicle.id}/services", "service_added")
@@ -196,6 +198,12 @@ async def service_add_attachment(
     user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
     db: AsyncSession = Depends(get_db),
 ):
+    """Příloha k servisnímu úkonu - fotografie i PDF.
+
+    Kterou cestou soubor půjde, rozhodne service vrstva podle přípony
+    (services/service.py:_store_invoice); router ani formulář to
+    nerozlišují, protože faktura ze servisu přijde jednou vyfocená a
+    podruhé e-mailem jako PDF."""
     record = await repository.get(db, service_id)
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Záznam nebyl nalezen.")
@@ -208,47 +216,10 @@ async def service_add_attachment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vyberte soubor.")
     try:
         await service.add_attachment(db, record=record, actor=user, photo=data)
-    except (PhotoTooLarge, UnsupportedPhotoType) as error:
+    except (PhotoTooLarge, UnsupportedPhotoType, documents_service.DocumentError,
+            DocumentTooLarge, UnsupportedDocumentType) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return flash.redirect(f"/kniha-jizd/vehicles/{record.vehicle_id}/services", "photo_added")
-
-
-@services_router.post("/services/{service_id}/documents", dependencies=[Depends(verify_csrf)])
-async def service_add_document(
-    service_id: uuid.UUID,
-    document: UploadFile = File(...),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Doklad k servisu jako PLNOHODNOTNÝ dokument, tedy i PDF.
-
-    Fotografie faktury jde nahrát přes /attachments (obrázková pipeline
-    se zmenšováním), ale faktura přijatá e-mailem bývá PDF - to přes
-    obrázkovou cestu neprojde. Používá se stejné úložiště jako u
-    dokumentů vozidla: umí PDF, ověřuje magické bajty, dává souborům
-    náhodná jména a má autorizované stahování."""
-    record = await repository.get(db, service_id)
-    if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Záznam nebyl nalezen.")
-    codes = await get_user_permission_codes(db, user.id)
-    assert_vehicle_visible(codes, record.vehicle, user)
-    assert_vehicle_manage_access(codes, record.vehicle, user)
-
-    data = await document.read()
-    if not data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vyberte soubor.")
-
-    try:
-        await documents_service.add_document(
-            db, vehicle=record.vehicle, actor=user, doc_type="faktura",
-            title=f"Doklad – {document.filename}", valid_from=None, valid_to=None, note=None,
-            filename=document.filename or "doklad", content_type=document.content_type, data=data,
-            service_id=record.id,
-        )
-    except (documents_service.DocumentError, DocumentTooLarge, UnsupportedDocumentType) as error:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
-
-    return flash.redirect(f"/kniha-jizd/vehicles/{record.vehicle_id}/services", "document_added")
 
 
 @services_router.post("/services/{service_id}/delete", dependencies=[Depends(verify_csrf)])

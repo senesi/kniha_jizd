@@ -24,7 +24,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -272,7 +272,11 @@ class VehicleService(Base):
     """One service/maintenance record (zadání 17)."""
 
     __tablename__ = "vehicle_services"
-    __table_args__ = {"schema": SCHEMA}
+    __table_args__ = (
+        CheckConstraint("cardinality(service_types) > 0",
+                        name="ck_fleet_vehicle_services_types_not_empty"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     vehicle_id: Mapped[uuid.UUID] = mapped_column(
@@ -280,7 +284,13 @@ class VehicleService(Base):
     )
     service_date: Mapped[date] = mapped_column(Date, nullable=False)
     odometer_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    service_type: Mapped[str] = mapped_column(String(30), nullable=False, default="jine")
+    # Jedna návštěva servisu bývá víc úkonů najednou (olej + filtry +
+    # brzdy). Pole místo jedné hodnoty, aby se podle typu dalo dohledat
+    # všechno, co se dělalo, ne jen to hlavní. Prázdné pole hlídá CHECK
+    # v databázi, ne jen aplikace.
+    service_types: Mapped[list[str]] = mapped_column(
+        ARRAY(String(30)), nullable=False, default=lambda: ["jine"],
+    )
     description: Mapped[str] = mapped_column(Text, nullable=False)
     supplier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     price_czk: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)

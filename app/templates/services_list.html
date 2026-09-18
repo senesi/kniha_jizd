@@ -54,9 +54,11 @@
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
+          {% for service_type in record.service_types %}
           <span class="kj-badge bg-surface text-subtle border border-divider">
-            {{ labels.SERVICE_TYPE.get(record.service_type, record.service_type) }}
+            {{ labels.SERVICE_TYPE.get(service_type, service_type) }}
           </span>
+          {% endfor %}
           <span class="text-sm font-bold">{{ record.service_date | d }}</span>
           {% if record.odometer_km %}
           <span class="text-xs text-muted2">{{ record.odometer_km | km }} km</span>
@@ -98,21 +100,14 @@
         <div class="font-extrabold">{{ record.price_czk | money }} Kč</div>
         {% endif %}
         {% if can_manage %}
+        {# Jedno tlačítko na obojí: uživatel nemá řešit, jestli je faktura
+           fotka nebo PDF - rozhodne se podle přípony na serveru. #}
         <form method="post" action="/kniha-jizd/services/{{ record.id }}/attachments"
               enctype="multipart/form-data" class="mt-2">
           {{ csrf_field(request) }}
           <label class="text-xs text-accent hover:underline cursor-pointer">
-            + foto
-            <input type="file" name="photo" accept="image/*" class="hidden"
-                   onchange="this.form.submit()">
-          </label>
-        </form>
-        <form method="post" action="/kniha-jizd/services/{{ record.id }}/documents"
-              enctype="multipart/form-data" class="mt-1">
-          {{ csrf_field(request) }}
-          <label class="text-xs text-accent hover:underline cursor-pointer">
-            + doklad (PDF)
-            <input type="file" name="document" accept=".pdf,image/*" class="hidden"
+            + příloha
+            <input type="file" name="photo" accept=".pdf,image/*" class="hidden"
                    onchange="this.form.submit()">
           </label>
         </form>

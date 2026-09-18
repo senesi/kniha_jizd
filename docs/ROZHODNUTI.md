@@ -605,3 +605,55 @@ PDF nesmí shodit start aplikace.
 
 **Zápis přes `os.replace`.** Dva souběžné požadavky na týž dokument by
 jinak psaly do jednoho souboru naráz a druhý by si přečetl půlku JPEGu.
+
+---
+
+## R32 — Servisní úkon má typů víc, ne jeden
+
+**Rozhodnutí.** `VehicleService.service_type` (jedna hodnota) se mění na
+`service_types` (pole). Jedna návštěva servisu bývá víc úkonů najednou —
+vymění se olej, filtry a k tomu se přehodí brzdové destičky.
+
+**Proč pole, a ne „hlavní typ + vedlejší".** Který z nich je hlavní?
+Odpověď na to nikdo nezná a stejně by se lišila případ od případu.
+Vedlejší typy by navíc znamenaly dva sloupce, které musí zůstat
+v souladu — přesně to, čemu se projekt vyhýbá jinde (R1, R4, R28).
+
+**Proč se starý sloupec zahodil.** Držet obojí by znamenalo druhý zdroj
+pravdy o téže věci. Migrace `0004` data převádí, nemaže: každý existující
+záznam dostane jednoprvkové pole s hodnotou, kterou měl. Downgrade vrací
+první prvek — zpátky se víc typů nevejde a migrace to říká nahlas.
+
+**Prázdné pole hlídá databáze**, ne jen aplikace: CHECK
+`cardinality(service_types) > 0`. Servisní úkon bez typu není záznam,
+o kterém by šlo cokoliv zjistit.
+
+**Pořadí se normalizuje** podle číselníku `SERVICE_TYPES`, ne podle toho,
+jak uživatel klikal — jinak by dva stejné úkony vypadaly v seznamu
+pokaždé jinak.
+
+**Semafor prohlídky** se posune, když je `vymena_oleje` mezi vybranými.
+Dřív musel být jediný, takže kdo zapsal olej spolu s brzdami, přišel o
+přepočet dalšího termínu.
+
+---
+
+## R33 — Na přílohu k servisu stačí jedno tlačítko
+
+**Rozhodnutí.** `/services/{id}/attachments` přijímá fotografii i PDF.
+Samostatná routa `/services/{id}/documents` zanikla a formulář pro
+založení úkonu bere `accept=".pdf,image/*"`.
+
+**Proč.** Faktura ze servisu přijde jednou vyfocená mobilem a podruhé
+e-mailem jako PDF. Dvě tlačítka vedle sebe („+ foto" / „+ doklad")
+nutila uživatele rozhodnout něco, co pozná server sám z přípony — a kdo
+by se spletl, dostal by chybu místo uložené faktury.
+
+**Kde se rozhoduje.** V service vrstvě (`_store_invoice`), na jednom
+místě. Obrázek, který zvládne obrázková pipeline, jde jako `Attachment`
+(zmenšování, náhledy); všechno ostatní — PDF, ale i HEIC, které Pillow
+neotevře — jde jako `VehicleDocument` se zaplněným `service_id` (R29).
+Router ani šablona o té volbě nevědí.
+
+**Co to vyřešilo navíc.** Formulář pro **založení** úkonu dosud bral jen
+`image/*`, takže PDF šlo přiložit až dodatečně ze seznamu. Teď jde rovnou.

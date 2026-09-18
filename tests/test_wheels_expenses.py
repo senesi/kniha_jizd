@@ -625,10 +625,12 @@ async def test_service_record_accepts_pdf_document(logged_in_client, csrf_token)
             select(VehicleService).where(VehicleService.vehicle_id == uuid.UUID(vehicle_id))
         )).scalar_one()
 
+    # Jedna routa na přílohy: co je fotka a co doklad, rozhodne server
+    # podle přípony (services/service.py:_store_invoice).
     response = await logged_in_client.post(
-        f"/kniha-jizd/services/{record.id}/documents",
+        f"/kniha-jizd/services/{record.id}/attachments",
         data={"csrf_token": csrf_token},
-        files={"document": ("faktura.pdf", MINIMAL_PDF, "application/pdf")},
+        files={"photo": ("faktura.pdf", MINIMAL_PDF, "application/pdf")},
         follow_redirects=False,
     )
     assert response.status_code == 303

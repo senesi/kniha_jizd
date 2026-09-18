@@ -79,7 +79,7 @@ async def test_add_service_record(logged_in_client, csrf_token, admin_user):
     rows = await _service_rows(vehicle_id)
     assert len(rows) == 1
     record = rows[0]
-    assert record.service_type == "pravidelny_servis"
+    assert record.service_types == ["pravidelny_servis"]
     assert record.description == "Pravidelná prohlídka"
     assert record.odometer_km == 100000
     assert record.supplier == "Autoservis Novák"
@@ -510,3 +510,145 @@ async def test_deleted_document_has_no_preview(logged_in_client, csrf_token):
         data={"csrf_token": extract_csrf_token(listing.text)}, follow_redirects=False,
     )
     assert (await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")).status_code == 404
+
+
+# ======================================================================
+# Víc typů u jednoho servisního úkonu
+# ======================================================================
+
+async def test_service_record_accepts_several_types(logged_in_client, csrf_token):
+    """Jedna návštěva servisu bývá víc úkonů najednou."""
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="S-30", license_plate="1SE 0030")
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/services/new",
+        data={
+            "csrf_token": csrf_token,
+            "service_date": date.today().isoformat(),
+            # Seznam = zaškrtnutá víc než jedna položka, přesně jak to
+            # posílá formulář.
+            "service_type": ["brzdy", "filtry", "vymena_oleje"],
+            "description": "Olej, filtry a přední destičky",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    record = (await _service_rows(vehicle_id))[0]
+    # Pořadí podle číselníku, ne podle toho, jak uživatel klikal.
+    assert record.service_types == ["vymena_oleje", "filtry", "brzdy"]
+
+    listing = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/services")
+    for label in ("Servisní prohlídka / olej", "Filtry", "Brzdy"):
+        assert label in listing.text
+
+
+async def test_duplicate_types_are_collapsed(logged_in_client, csrf_token):
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="S-31", license_plate="1SE 0031")
+    await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/services/new",
+        data={
+            "csrf_token": csrf_token,
+            "service_date": date.today().isoformat(),
+            "service_type": ["brzdy", "brzdy"],
+            "description": "Brzdy",
+        },
+        follow_redirects=False,
+    )
+    assert (await _service_rows(vehicle_id))[0].service_types == ["brzdy"]
+
+
+async def test_no_type_selected_is_refused(logged_in_client, csrf_token):
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="S-32", license_plate="1SE 0032")
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/services/new",
+        data={"csrf_token": csrf_token, "service_date": date.today().isoformat(),
+              "description": "Něco se dělalo"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "aspoň jeden typ" in response.text
+    assert await _service_rows(vehicle_id) == []
+
+
+async def test_oil_interval_updates_when_oil_is_one_of_several_types(logged_in_client, csrf_token):
+    """Semafor se posune i tehdy, když se olej dělal spolu s něčím jiným."""
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="S-33", license_plate="1SE 0033",
+        current_odometer_km="120000",
+    )
+    await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/services/new",
+        data={
+            "csrf_token": csrf_token,
+            "service_date": date.today().isoformat(),
+            "service_type": ["vymena_oleje", "brzdy"],
+            "description": "Olej a brzdy",
+            "odometer_km": "120000",
+            "update_oil_interval": "1",
+        },
+        follow_redirects=False,
+    )
+    vehicle = await _vehicle_row(vehicle_id)
+    assert vehicle.last_oil_change_at == date.today()
+    assert vehicle.last_oil_change_km == 120000
+
+
+async def test_service_photo_and_pdf_go_to_the_same_record(logged_in_client, csrf_token):
+    """Jedno tlačítko na přílohu: fotka jde do galerie, PDF do dokladů."""
+    from app.core.db import async_session_factory
+    from app.models.fleet import VehicleDocument
+
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="S-34", license_plate="1SE 0034")
+    await _add_service(logged_in_client, csrf_token, vehicle_id)
+    record = (await _service_rows(vehicle_id))[0]
+
+    for filename, content, mime in (
+        ("faktura.jpg", _image_bytes(), "image/jpeg"),
+        ("faktura.pdf", MINIMAL_PDF, "application/pdf"),
+    ):
+        response = await logged_in_client.post(
+            f"/kniha-jizd/services/{record.id}/attachments",
+            data={"csrf_token": csrf_token},
+            files={"photo": (filename, content, mime)},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303, filename
+
+    async with async_session_factory() as db:
+        documents = (await db.execute(
+            select(VehicleDocument).where(VehicleDocument.service_id == record.id)
+        )).scalars().all()
+    # PDF skončilo v dokumentech, fotka v přílohách - obojí u téhož záznamu.
+    assert [d.mime_type for d in documents] == ["application/pdf"]
+
+    refreshed = (await _service_rows(vehicle_id))[0]
+    async with async_session_factory() as db:
+        from app.models.fleet import Attachment
+        attachments = (await db.execute(
+            select(Attachment).where(Attachment.service_id == refreshed.id)
+        )).scalars().all()
+    assert [a.mime_type for a in attachments] == ["image/jpeg"]
+
+
+async def test_invoice_pdf_on_the_create_form(logged_in_client, csrf_token):
+    """Faktura přiložená rovnou při zakládání úkonu smí být PDF."""
+    from app.core.db import async_session_factory
+    from app.models.fleet import VehicleDocument
+
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="S-35", license_plate="1SE 0035")
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/services/new",
+        data={"csrf_token": csrf_token, "service_date": date.today().isoformat(),
+              "service_type": "oprava", "description": "Oprava chlazení"},
+        files={"invoice": ("faktura.pdf", MINIMAL_PDF, "application/pdf")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    record = (await _service_rows(vehicle_id))[0]
+    async with async_session_factory() as db:
+        documents = (await db.execute(
+            select(VehicleDocument).where(VehicleDocument.service_id == record.id)
+        )).scalars().all()
+    assert len(documents) == 1
+    assert documents[0].mime_type == "application/pdf"

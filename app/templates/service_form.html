@@ -22,19 +22,22 @@
   {{ warning_box(warnings) }}
 
   <div class="kj-card mb-4">
+    {# Zaškrtávátka, ne přepínače: jedna návštěva servisu bývá víc úkonů
+       najednou - vymění se olej, filtry a k tomu brzdové destičky. #}
     <label class="kj-label mt-0">Typ úkonu <span class="text-danger">*</span></label>
-    {% set chosen = form.get('service_type') %}
+    {% set chosen = form.get('service_types') or [] %}
     <div class="grid grid-cols-2 gap-2">
       {% for option in service_types %}
       <label class="flex items-center gap-2 rounded-xl border border-border2 bg-white px-3 py-2.5 cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5">
-        <input type="radio" name="service_type" value="{{ option }}" required
-               class="w-4 h-4 text-accent focus:ring-accent"
+        <input type="checkbox" name="service_type" value="{{ option }}"
+               class="w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
                data-service-type="{{ option }}"
-               {% if option == chosen %}checked{% endif %}>
+               {% if option in chosen %}checked{% endif %}>
         <span class="text-sm font-bold">{{ labels.SERVICE_TYPE.get(option, option) }}</span>
       </label>
       {% endfor %}
     </div>
+    <p class="text-xs text-muted mt-1">Lze vybrat víc úkonů najednou.</p>
 
     <div class="grid sm:grid-cols-2 gap-x-4">
       <div>
@@ -54,7 +57,7 @@
 
     {# Uzavření smyčky mezi servisní knihou a semaforem na kartě vozidla:
        bez toho by byl olej vyměněný a semafor by dál svítil oranžově. #}
-    <label id="oil-box" class="flex items-start gap-2 mt-4 cursor-pointer {% if form.get('service_type') != 'vymena_oleje' %}hidden{% endif %}">
+    <label id="oil-box" class="flex items-start gap-2 mt-4 cursor-pointer {% if 'vymena_oleje' not in chosen %}hidden{% endif %}">
       <input type="checkbox" name="update_oil_interval" value="1" checked
              class="mt-0.5 w-5 h-5 rounded border-border2 text-accent focus:ring-accent">
       <span>
@@ -83,9 +86,12 @@
   </details>
 
   <div class="kj-card mb-4">
-    <label class="kj-label mt-0">Fotografie faktury</label>
-    <input class="kj-input !py-3" type="file" name="invoice" accept="image/*" capture="environment">
-    <p class="text-xs text-muted mt-1">Nepovinné. Další přílohy lze přidat i potom.</p>
+    <label class="kj-label mt-0">Faktura nebo doklad</label>
+    <input class="kj-input !py-3" type="file" name="invoice" accept=".pdf,image/*">
+    <p class="text-xs text-muted mt-1">
+      Nepovinné. Fotografie i PDF – faktura ze servisu přijde jednou vyfocená,
+      podruhé e-mailem. Další přílohy lze přidat i potom.
+    </p>
   </div>
 
   <button type="submit" class="kj-btn">Uložit úkon</button>
@@ -93,11 +99,13 @@
 </form>
 
 <script>
-  // Nabídka „zapsat jako výměnu oleje" má smysl jen u toho typu úkonu.
+  // Nabídka „zapsat jako servisní prohlídku" má smysl jen tehdy, když je
+  // ten úkon mezi vybranými - a ten teď může být vybraný spolu s dalšími.
   const oilBox = document.getElementById("oil-box");
-  document.querySelectorAll("[data-service-type]").forEach((radio) => {
-    radio.addEventListener("change", () => {
-      oilBox.classList.toggle("hidden", radio.dataset.serviceType !== "vymena_oleje");
+  const oilCheckbox = document.querySelector('[data-service-type="vymena_oleje"]');
+  document.querySelectorAll("[data-service-type]").forEach((box) => {
+    box.addEventListener("change", () => {
+      oilBox.classList.toggle("hidden", !(oilCheckbox && oilCheckbox.checked));
     });
   });
 </script>

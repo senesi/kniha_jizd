@@ -49,7 +49,7 @@ async def last_of_type(db: AsyncSession, vehicle_id: uuid.UUID, service_type: st
         select(VehicleService)
         .where(
             VehicleService.vehicle_id == vehicle_id,
-            VehicleService.service_type == service_type,
+            VehicleService.service_types.any(service_type),
             VehicleService.deleted_at.is_(None),
         )
         .options(*_load_options())
