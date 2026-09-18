@@ -1,0 +1,18 @@
+# Kniha jízd - připomínky termínů vozidel (STK, pojištění, známka, servis).
+#
+# Patří výhradně projektu kniha_jizd: spouští skript v jeho kontejneru a
+# zapisuje do jeho adresáře. Žádného jiného projektu na tomhle serveru se
+# to nedotýká.
+#
+# 7:00 místního času (server běží v Europe/Berlin, tedy stejný posun jako
+# Praha) - upozornění má dorazit dřív, než se vyjíždí.
+#
+# Opakované spuštění nevadí: každá připomínka má dedupe_key s datem i
+# stupněm naléhavosti, takže druhý běh téhož dne nikomu nepošle nic navíc.
+#
+# Soubor spravuje dokumentace projektu, viz docs/SERVER_SETUP.md.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 7 * * * root /usr/bin/docker exec kniha-jizd-app python -m scripts.send_deadline_reminders >> /opt/kniha_jizd/logs/deadline-reminders.log 2>&1

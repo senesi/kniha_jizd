@@ -1,0 +1,11 @@
+# Kniha jízd - log připomínek termínů (/etc/cron.d/kniha-jizd).
+# Patří výhradně projektu kniha_jizd, žádných jiných logů se nedotýká.
+/opt/kniha_jizd/logs/*.log {
+    monthly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+}

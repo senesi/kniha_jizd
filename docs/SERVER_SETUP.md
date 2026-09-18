@@ -139,6 +139,8 @@ Když není jisté, jestli je zdroj sdílený, nebo patří jinému projektu —
 │   ├── postgres/        # databáze (bind mount)
 │   ├── photos/          # tachometr, účtenky, závady, vozidla
 │   └── documents/       # TP, OTP, zelená karta…
+├── logs/
+│   └── deadline-reminders.log   # výstup naplánovaných připomínek
 └── backups/
     └── postgres/        # dumpy před deployem
 ```
@@ -212,6 +214,52 @@ Aplikace je mezitím plně dostupná na své URL.
 
 Postup: `nginx -T` → přidat `location` do existujícího `server` bloku →
 `nginx -t` → `systemctl reload nginx`. Nikdy `restart`.
+
+---
+
+## 6b. Naplánované úlohy (cron)
+
+Jediná naplánovaná úloha projektu: **připomínky termínů vozidel**
+(STK, pojištění, dálniční známka, servisní prohlídka).
+
+| | |
+|---|---|
+| Soubor | `/etc/cron.d/kniha-jizd` (root:root, 0644) |
+| Čas | **7:00 každý den** |
+| Příkaz | `docker exec kniha-jizd-app python -m scripts.send_deadline_reminders` |
+| Log | `/opt/kniha_jizd/logs/deadline-reminders.log` |
+| Rotace | `/etc/logrotate.d/kniha-jizd` — měsíčně, 12 kopií, komprese |
+| Nasazeno | 18. 9. 2026 |
+
+**Časové pásmo.** Server běží v `Europe/Berlin`, což má stejný posun
+jako Praha po celý rok — 7:00 v cronu je tedy 7:00 místního času i po
+přechodu na zimní čas. Kdyby se pásmo serveru někdy změnilo, tenhle
+předpoklad padá a je potřeba čas v cronu přepočítat.
+
+**Proč 7:00.** Upozornění má dorazit dřív, než se vyjíždí.
+
+**Opakované spuštění nevadí.** Každá připomínka nese `dedupe_key`
+složený z vozidla, termínu, jeho data a stupně naléhavosti, takže druhý
+běh téhož dne nikomu nepošle nic navíc. Po prodloužení STK se klíč změní
+a připomínka projde znovu (viz ROZHODNUTI.md R41).
+
+**Ruční spuštění** (nanečisto, nic neodešle ani nezapíše):
+
+```bash
+sudo docker exec kniha-jizd-app python -m scripts.send_deadline_reminders --dry-run
+```
+
+**Izolace.** Soubor v `cron.d` patří výhradně tomuto projektu: spouští
+skript v jeho kontejneru a zapisuje do jeho adresáře. Ostatní soubory
+v `/etc/cron.d/` (`certbot`, `e2scrub_all`, `kernel`) jsou systémové a
+tenhle projekt se jich nedotýká. Totéž platí pro `/etc/logrotate.d/`.
+
+**Pozor: e-mail zatím neodchází.** V produkčním `.env` není vyplněný
+`SMTP_HOST`, takže připomínky vznikají jen ve schránce upozornění
+v aplikaci. Odesílání pošty se zapne doplněním SMTP údajů do
+`/opt/kniha_jizd/config/.env` a restartem aplikačního kontejneru;
+aplikace bez SMTP funguje dál, jen se e-maily neposílají
+(`app/core/mailer.py`).
 
 ---
 
