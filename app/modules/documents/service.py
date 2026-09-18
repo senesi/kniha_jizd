@@ -13,12 +13,14 @@ Soubory nejsou nikdy servírované staticky: leží pod náhodnými UUID jmény
 v adresáři mimo dosah webserveru a každé stažení projde autorizovanou
 routou (zadání 18/30 - žádná uhodnutelná URL).
 """
+import os
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import previews
 from app.core.audit import log_action
 from app.core.config import get_settings
 from app.core.documents import (
@@ -37,6 +39,7 @@ MODULE = "documents"
 __all__ = [
     "DocumentError", "DocumentTooLarge", "UnsupportedDocumentType",
     "add_document", "delete_document", "can_manage_documents",
+    "load_preview",
 ]
 
 
@@ -127,6 +130,47 @@ async def delete_document(db: AsyncSession, *, document: VehicleDocument, actor:
 
 def file_path(document: VehicleDocument) -> Path:
     return get_settings().documents_path / document.stored_filename
+
+
+def preview_path(document: VehicleDocument) -> Path:
+    """Miniatura leží vedle originálu, pod stejným náhodným jménem.
+
+    Tedy taky mimo dosah webserveru - náhled technického průkazu je
+    citlivý úplně stejně jako on sám a musí projít toutéž autorizovanou
+    routou."""
+    stem = Path(document.stored_filename).stem
+    return get_settings().documents_path / f"{stem}_preview.jpg"
+
+
+def load_preview(document: VehicleDocument) -> bytes | None:
+    """JPEG miniatura prvního listu; `None`, když nejde vyrobit.
+
+    Vyrábí se až při prvním zobrazení a pak zůstane na disku. Dokumenty
+    nahrané dřív tak náhled dostanou taky - bez migrace a bez dávkového
+    přepočtu."""
+    cached = preview_path(document)
+    if cached.is_file():
+        return cached.read_bytes()
+
+    source = file_path(document)
+    if not source.is_file():
+        return None
+    data = previews.render_preview(source)
+    if data is None:
+        return None
+
+    # Přes dočasný soubor a os.replace: dva souběžné požadavky na týž
+    # dokument jinak zapisují do jednoho souboru naráz a druhý si přečte
+    # půlku JPEGu.
+    tmp = cached.with_name(f"{cached.stem}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, cached)
+    except OSError:
+        # Plný disk nebo práva - miniatura se příště zkusí znovu,
+        # zobrazení tím padnout nesmí.
+        tmp.unlink(missing_ok=True)
+    return data
 
 
 def is_expired(document: VehicleDocument, today: date | None = None) -> bool:

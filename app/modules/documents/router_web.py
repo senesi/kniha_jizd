@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import flash
+from app.core import flash, previews
 from app.core.access import MANAGE_ANY, MANAGE_OWN, assert_vehicle_visible
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
@@ -145,6 +145,33 @@ async def document_file(
             # private: dokumenty nesmí skončit ve sdílené cache proxy.
             "Cache-Control": "private, max-age=300",
         },
+    )
+
+
+@documents_router.get("/documents/{document_id}/preview")
+async def document_preview(
+    document_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Miniatura prvního listu.
+
+    Autorizace je záměrně totožná se stahováním celého souboru: náhled
+    technického průkazu prozradí prakticky totéž co on sám, takže u
+    skrytého vozidla musí končit stejným 404."""
+    codes = await get_user_permission_codes(db, user.id)
+    document = await _load_document(db, document_id, user=user, codes=codes)
+
+    data = service.load_preview(document)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Náhled není k dispozici.")
+
+    return Response(
+        content=data,
+        media_type=previews.PREVIEW_MIME,
+        # private: náhled dokumentu nesmí skončit ve sdílené cache proxy,
+        # stejně jako originál.
+        headers={"Cache-Control": "private, max-age=3600"},
     )
 
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import document_thumb %}
 {% block title %}Výdaje {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -95,10 +96,7 @@
         {% if expense.receipts %}
         <div class="flex flex-wrap gap-2 mt-2">
           {% for receipt in expense.receipts %}
-          <a href="/kniha-jizd/documents/{{ receipt.id }}/file" target="_blank"
-             class="kj-badge bg-surface text-subtle border border-divider">
-            📄 {{ receipt.original_filename }}
-          </a>
+          {{ document_thumb(receipt, "sm") }}
           {% endfor %}
         </div>
         {% endif %}

@@ -7,7 +7,7 @@ from markupsafe import Markup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash as flash_messages
-from app.core import fuel, labels
+from app.core import fuel, labels, previews
 from app.core.csrf import csrf_field
 
 templates = Jinja2Templates(directory="app/templates")
@@ -17,6 +17,10 @@ templates.env.globals["csrf_field"] = csrf_field
 templates.env.globals["fuel"] = fuel
 # České popisky číselníků - {{ labels.VEHICLE_TYPE[...] }}.
 templates.env.globals["labels"] = labels
+# Makro document_thumb se samo ptá, jestli u dokumentu vůbec zkoušet
+# náhled - jinak by se ta informace musela protahovat přes každý router,
+# který někde vypisuje dokumenty.
+templates.env.globals["previews"] = previews
 
 
 async def render_page(request: Request, name: str, user, db: AsyncSession, *, status_code: int = 200, **context):

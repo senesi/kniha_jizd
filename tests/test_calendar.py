@@ -140,15 +140,45 @@ def test_service_block_is_distinguished_from_reservation():
     assert "Servis / mimo provoz" in cells[2].tooltip
 
 
-def test_open_trip_occupies_every_following_day():
-    """Probíhající jízda nemá konec - blokuje od svého začátku dál."""
+def test_open_trip_marks_today_but_leaves_the_future_free():
+    """Probíhající jízda obarví dnešek, ne zbytek týdne.
+
+    Že se řidič dneska nevrátil, o čtvrtku nic neříká - a kdyby se „jede"
+    táhlo do konce týdne, nešlo by vozidlo rezervovat na žádný z těch
+    dní."""
     vehicle = _vehicle()
-    trip = FakeTrip(vehicle_id=vehicle.id, started_at=_at(DAYS[2], 9), primary_driver=FakeUser("Karel"))
+    today = DAYS[2]
+    trip = FakeTrip(vehicle_id=vehicle.id, started_at=_at(today, 9), primary_driver=FakeUser("Karel"))
+    cells = build_rows([vehicle], [], [trip], DAYS, today=today)[0].cells
+
+    assert cells[2].level == "trip"
+    assert "Karel" in cells[2].tooltip
+    assert all(cell.is_free for cell in cells[3:])
+
+
+def test_open_trip_started_earlier_covers_the_days_it_really_ran():
+    """Jízda otevřená od pondělí drží pondělí až dnešek - to se stalo."""
+    vehicle = _vehicle()
+    today = DAYS[3]
+    trip = FakeTrip(vehicle_id=vehicle.id, started_at=_at(DAYS[1], 9), primary_driver=FakeUser("Karel"))
+    cells = build_rows([vehicle], [], [trip], DAYS, today=today)[0].cells
+
+    assert cells[0].is_free
+    assert [cell.level for cell in cells[1:4]] == ["trip", "trip", "trip"]
+    assert all(cell.is_free for cell in cells[4:])
+
+
+def test_closed_trip_is_unaffected_by_today():
+    """Ukončená jízda má vlastní konec - dnešek do ní nemluví."""
+    vehicle = _vehicle()
+    trip = FakeTrip(
+        vehicle_id=vehicle.id, started_at=_at(DAYS[4], 8),
+        ended_at=_at(DAYS[5], 17), primary_driver=FakeUser("Karel"),
+    )
     cells = build_rows([vehicle], [], [trip], DAYS, today=MONDAY)[0].cells
 
-    assert cells[1].is_free
-    assert all(cell.level == "trip" for cell in cells[2:])
-    assert "Karel" in cells[2].tooltip
+    assert [cell.level for cell in cells[4:6]] == ["trip", "trip"]
+    assert cells[3].is_free and cells[6].is_free
 
 
 def test_running_trip_outranks_reservation_on_the_same_day():

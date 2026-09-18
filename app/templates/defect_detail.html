@@ -57,14 +57,16 @@
 </div>
 
 <div class="kj-card mb-4">
-  <div class="flex items-center justify-between gap-3 mb-3">
+  <div class="mb-3">
     <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Fotografie</h2>
+    {# Stejný důvod jako u vozidla: nativní výběr souboru se na telefonu
+       vedle nadpisu nevejde. #}
     <form method="post" action="/kniha-jizd/defects/{{ defect.id }}/photos" enctype="multipart/form-data"
-          class="flex items-center gap-2">
+          class="mt-2 grid gap-2 sm:flex sm:items-center sm:justify-end">
       {{ csrf_field(request) }}
       <input type="file" name="photo" accept="image/*" capture="environment" required
-             class="text-xs file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-surface file:text-subtle file:font-bold">
-      <button type="submit" class="kj-btn-secondary !min-h-[36px] !px-3 !text-sm">Přidat</button>
+             class="w-full min-w-0 text-xs file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-surface file:text-subtle file:font-bold">
+      <button type="submit" class="kj-btn-secondary !min-h-[36px] !px-3 !text-sm w-full sm:w-auto">Přidat</button>
     </form>
   </div>
   {% if defect.photos %}

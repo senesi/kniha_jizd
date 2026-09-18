@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import document_thumb %}
 {% block title %}Dokumenty {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -27,7 +28,9 @@
   {% set soon = docs.expires_soon(document) %}
   <div class="kj-card !p-4 {% if expired %}border-l-4 !border-l-danger{% elif soon %}border-l-4 !border-l-warning{% endif %}">
     <div class="flex items-start justify-between gap-3">
-      <div class="min-w-0">
+      <div class="flex items-start gap-3 min-w-0">
+        {{ document_thumb(document) }}
+        <div class="min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="kj-badge bg-surface text-subtle border border-divider">
             {{ labels.DOCUMENT_TYPE.get(document.doc_type, document.doc_type) }}
@@ -51,6 +54,7 @@
         {% endif %}
         <div class="text-[11px] text-muted mt-1">
           {{ document.original_filename }} &middot; {{ (document.size_bytes / 1024) | round | int }} kB
+        </div>
         </div>
       </div>
 

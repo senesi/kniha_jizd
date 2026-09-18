@@ -550,3 +550,58 @@ model.
 
 **Proč filtrovat.** Bez toho by se mezi technický průkaz a zelenou kartu
 míchaly účtenky z myčky. Doklad se zobrazuje u svého záznamu.
+
+---
+
+## R30 — Probíhající jízda obsazuje v kalendáři jen dnešek
+
+**Rozhodnutí.** Otevřená jízda (`ended_at IS NULL`) obarví v kalendáři
+dny od svého začátku po **konec dneška**, ne po konec zobrazeného
+rozsahu. Následující dny zůstávají volné a rezervovatelné.
+
+**Proč.** Otevřená jízda nemá konec, a když se brala doslova, „jede" se
+táhlo přes celý zbytek týdne — vozidlo pak nešlo rezervovat na žádný z
+těch dnů. Přitom to, že se řidič dneska nevrátil, neříká nic o pátku.
+Kalendář má ukazovat, co víme; o budoucnosti u otevřené jízdy nevíme nic.
+
+**Proč zrovna dnešek.** Je to poslední den, o kterém máme informaci.
+Jakmile jízda skutečně přeteče do dalšího dne, ten den se obarví sám
+při příštím zobrazení — nic se nemusí přepočítávat ani ukládat, stejně
+jako u zbytku odvozených stavů (R4, R28).
+
+**Co se tím nemění.** Rezervaci na dobu probíhající jízdy aplikace
+nikdy nezakazovala — překryv hlídá EXCLUDE constraint mezi rezervacemi
+(R3), ne jízdy. Šlo čistě o to, že zabarvená buňka nebyla klikací.
+
+**Den startu je vidět vždycky.** Kdyby měla otevřená jízda ručně
+opravený čas startu do budoucna (požadavek A), použije se konec dne, kdy
+začala. Záznam tak z kalendáře nezmizí.
+
+---
+
+## R31 — Miniatura dokumentu se vyrábí až při zobrazení
+
+**Rozhodnutí.** Náhled prvního listu dokumentu (`/documents/{id}/preview`)
+se nerenderuje při nahrání, ale při prvním zobrazení, a pak zůstává na
+disku vedle originálu jako `<stejné-uuid>_preview.jpg`.
+
+**Proč ne při nahrání.** Dokumenty na produkci už jsou. Náhled při
+nahrání by znamenal migraci, dávkový přepočet a sloupec navíc — a
+dokumenty nahrané dřív by ho stejně nedostaly, dokud by je někdo znovu
+nenahrál.
+
+**Proč vedle originálu.** Miniatura technického průkazu prozradí
+prakticky totéž co on sám, takže patří do téhož adresáře mimo dosah
+webserveru, pod stejně náhodné jméno, a její routa má **totožnou
+autorizaci** jako stahování: u skrytého vozidla končí stejným 404
+(zadání 18/30).
+
+**Náhled je pohodlí, ne funkce.** Poškozený soubor, PDF zašifrované
+heslem nebo HEIC, který Pillow bez `pillow-heif` neotevře — ve všech
+případech se vrátí `None` a vykreslí se neutrální ikona. Seznam
+dokumentů musí fungovat dál, stejně jako u OCR a map (zadání 14/34).
+Proto je i `pypdfium2` importované v `try/except`: chybějící renderer
+PDF nesmí shodit start aplikace.
+
+**Zápis přes `os.replace`.** Dva souběžné požadavky na týž dokument by
+jinak psaly do jednoho souboru naráz a druhý by si přečetl půlku JPEGu.

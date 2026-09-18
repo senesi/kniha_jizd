@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import deadline_row %}
+{% from "_macros.html" import deadline_row, document_thumb %}
 {% block title %}Servis {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -87,10 +87,7 @@
         {% if documents %}
         <div class="flex flex-wrap gap-2 mt-2">
           {% for document in documents %}
-          <a href="/kniha-jizd/documents/{{ document.id }}/file" target="_blank"
-             class="kj-badge bg-surface text-subtle border border-divider">
-            📄 {{ document.original_filename }}
-          </a>
+          {{ document_thumb(document, "sm") }}
           {% endfor %}
         </div>
         {% endif %}

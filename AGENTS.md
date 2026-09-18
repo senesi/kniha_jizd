@@ -104,7 +104,8 @@ tam, až modul vznikne.
 ```
 app/
   core/        průřezové věci: config, db, deps (oprávnění), csrf, audit,
-               photos, documents, mailer, app_settings, fleet_status
+               photos, documents, previews (miniatury dokumentů),
+               mailer, app_settings, fleet_status
                (semafor), fuel (l vs. kWh), ocr (pomůcka, ne závislost),
                labels, flash, templates
   models/      core.py (uživatelé, role, audit, nastavení)

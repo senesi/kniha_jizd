@@ -145,3 +145,44 @@
   </script>
   {% endif %}
 {% endmacro %}
+
+{% macro document_icon() %}
+  <svg viewBox="0 0 24 24" fill="none" class="w-2/3 h-2/3" aria-label="Dokument">
+    <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"
+          stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path>
+    <path d="M14 3v5h5M8.5 13h7M8.5 16.5h4.5"
+          stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  </svg>
+{% endmacro %}
+
+{# Miniatura náhledu dokumentu.
+
+   Seznam názvů souborů je k ničemu ve chvíli, kdy má vozidlo technický
+   průkaz, zelenou kartu a k tomu pět faktur - papír se pozná od pohledu
+   dřív, než se přečte jeho název.
+
+   Jestli má smysl náhled zkoušet, rozhoduje server podle přípony
+   (`previews.is_previewable_filename`). U HEIC nebo u PDF v prostředí
+   bez rendereru se rovnou kreslí neutrální ikona, místo aby prohlížeč
+   ukázal rozbitý obrázek. `onerror` je druhá pojistka pro poškozený
+   soubor, kde se to pozná až při vykreslování. #}
+{% macro document_thumb(document, size="md") %}
+  {% set sizes = {"sm": "w-12 h-12", "md": "w-16 h-16", "lg": "w-20 h-20"} %}
+  {% set box = sizes.get(size, sizes["md"]) %}
+  <a href="/kniha-jizd/documents/{{ document.id }}/file" target="_blank"
+     title="{{ document.original_filename }}"
+     class="{{ box }} shrink-0 rounded-xl overflow-hidden border border-divider-soft bg-white block">
+    {% if previews.is_previewable_filename(document.stored_filename) %}
+    <img src="/kniha-jizd/documents/{{ document.id }}/preview" alt="Náhled dokumentu"
+         loading="lazy" class="w-full h-full object-cover"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+    <div class="w-full h-full hidden items-center justify-center text-muted bg-surface">
+      {{ document_icon() }}
+    </div>
+    {% else %}
+    <div class="w-full h-full flex items-center justify-center text-muted bg-surface">
+      {{ document_icon() }}
+    </div>
+    {% endif %}
+  </a>
+{% endmacro %}

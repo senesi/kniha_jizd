@@ -73,11 +73,18 @@ def window_bounds(days: list[date]) -> tuple[datetime, datetime]:
     return first, last
 
 
+def _day_end(day: date) -> datetime:
+    """Půlnoc následujícího dne - horní mez dne, ne poslední okamžik."""
+    return datetime.combine(day + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
+
+
 def _overlaps_day(start_at: datetime, end_at: datetime | None, day: date) -> bool:
     day_start = datetime.combine(day, time.min, tzinfo=LOCAL_TZ)
     day_end = day_start + timedelta(days=1)
     if end_at is None:
-        # Otevřená jízda - obsazuje všechno od svého začátku dál.
+        # Záznam bez konce obsazuje všechno od svého začátku dál. Pro
+        # probíhající jízdy sem volající konec dosazuje (viz build_rows),
+        # takže tahle větev zbývá na rezervace bez konce.
         return start_at < day_end
     return start_at < day_end and end_at > day_start
 
@@ -105,6 +112,13 @@ def build_rows(vehicles, reservations, active_trips, days: list[date], today: da
     vozidlo bez jediné rezervace má svůj řádek - jinak by nebylo vidět,
     že je celý týden volné."""
     today = today or datetime.now(LOCAL_TZ).date()
+    # Probíhající jízda nemá konec, ale brát ji doslova by znamenalo
+    # obarvit „jede" všechny zbývající dny v týdnu a vozidlo by pak nešlo
+    # rezervovat na žádný z nich. To, že se řidič dneska ještě nevrátil,
+    # ale o pátku nic neříká - dnešek je poslední den, o kterém něco víme.
+    # Dál už je vozidlo volné a rezervovatelné; jakmile jízda skutečně
+    # přeteče do dalšího dne, obarví se ten den sám.
+    end_of_today = _day_end(today)
 
     rows: dict = {}
     for vehicle in vehicles:
@@ -130,8 +144,14 @@ def build_rows(vehicles, reservations, active_trips, days: list[date], today: da
         row = rows.get(trip.vehicle_id)
         if row is None:
             continue
+        # Otevřená jízda končí koncem dneška - nebo koncem dne, kdy
+        # začala, kdyby snad začínala později (ručně opravený čas startu).
+        # Den, kdy se vyjelo, musí být v kalendáři vidět vždycky.
+        started_day = trip.started_at.astimezone(LOCAL_TZ).date()
+        open_end = max(end_of_today, _day_end(started_day))
+        ends_at = trip.ended_at if trip.ended_at is not None else open_end
         for cell in row.cells:
-            if _overlaps_day(trip.started_at, trip.ended_at, cell.day):
+            if _overlaps_day(trip.started_at, ends_at, cell.day):
                 cell.add("trip", f"Právě jede: {trip.primary_driver.full_name}")
 
     return [rows[vehicle.id] for vehicle in vehicles]

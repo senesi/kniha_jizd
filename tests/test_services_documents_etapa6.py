@@ -416,3 +416,97 @@ async def test_image_document_is_accepted(logged_in_client, csrf_token):
     )
     assert response.status_code == 303
     assert (await _document_rows(vehicle_id))[0].mime_type == "image/jpeg"
+
+
+# ======================================================================
+# Miniatury náhledů dokumentů
+# ======================================================================
+
+async def test_image_document_has_a_preview(logged_in_client, csrf_token):
+    """Fotka TP se v seznamu ukáže jako miniatura, ne jen jako název."""
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="D2-20", license_plate="1DP 0020")
+    await _upload_document(
+        logged_in_client, csrf_token, vehicle_id,
+        content=_image_bytes(), filename="tp.jpg", mime="image/jpeg",
+    )
+    document = (await _document_rows(vehicle_id))[0]
+
+    listing = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/documents")
+    assert f"/kniha-jizd/documents/{document.id}/preview" in listing.text
+
+    preview = await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/jpeg"
+    # private: náhled nesmí skončit ve sdílené cache proxy, stejně jako originál.
+    assert "private" in preview.headers["cache-control"]
+
+
+async def test_preview_is_cached_on_disk_and_reused(logged_in_client, csrf_token):
+    """Druhé zobrazení už nerenderuje - miniatura zůstala na disku."""
+    from app.modules.documents import service as documents_service
+
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="D2-21", license_plate="1DP 0021")
+    await _upload_document(
+        logged_in_client, csrf_token, vehicle_id,
+        content=_image_bytes(), filename="tp.jpg", mime="image/jpeg",
+    )
+    document = (await _document_rows(vehicle_id))[0]
+
+    cached = documents_service.preview_path(document)
+    assert not cached.exists()
+
+    first = await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")
+    assert cached.is_file()
+    second = await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")
+    assert first.content == second.content
+
+
+async def test_undisplayable_document_has_no_preview_but_still_lists(logged_in_client, csrf_token):
+    """Bez náhledu se vypíše ikona a seznam funguje dál."""
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="D2-22", license_plate="1DP 0022")
+    await _upload_document(
+        logged_in_client, csrf_token, vehicle_id,
+        content=b"\x00\x00\x00\x18ftypheic" + b"\x00" * 40, filename="tp.heic", mime="image/heic",
+    )
+    document = (await _document_rows(vehicle_id))[0]
+
+    listing = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/documents")
+    assert listing.status_code == 200
+    assert f"/kniha-jizd/documents/{document.id}/preview" not in listing.text
+    assert f"/kniha-jizd/documents/{document.id}/file" in listing.text
+    assert (await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")).status_code == 404
+
+
+async def test_preview_of_hidden_vehicle_is_404(logged_in_client, csrf_token, anon_client, basic_user):
+    """Náhled TP prozradí totéž co on sám - musí končit stejně jako originál."""
+    hidden = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="D2-23", license_plate="1DP 0023", visibility="restricted",
+    )
+    await _upload_document(
+        logged_in_client, csrf_token, hidden,
+        content=_image_bytes(), filename="tp.jpg", mime="image/jpeg",
+    )
+    document = (await _document_rows(hidden))[0]
+
+    await login(anon_client, basic_user)
+    assert (await anon_client.get(f"/kniha-jizd/documents/{document.id}/preview")).status_code == 404
+    assert (await anon_client.get(f"/kniha-jizd/documents/{document.id}/file")).status_code == 404
+    # Správce ho vidí.
+    assert (await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")).status_code == 200
+
+
+async def test_deleted_document_has_no_preview(logged_in_client, csrf_token):
+    vehicle_id = await create_vehicle(logged_in_client, csrf_token, internal_code="D2-24", license_plate="1DP 0024")
+    await _upload_document(
+        logged_in_client, csrf_token, vehicle_id,
+        content=_image_bytes(), filename="tp.jpg", mime="image/jpeg",
+    )
+    document = (await _document_rows(vehicle_id))[0]
+    assert (await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")).status_code == 200
+
+    listing = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/documents")
+    await logged_in_client.post(
+        f"/kniha-jizd/documents/{document.id}/delete",
+        data={"csrf_token": extract_csrf_token(listing.text)}, follow_redirects=False,
+    )
+    assert (await logged_in_client.get(f"/kniha-jizd/documents/{document.id}/preview")).status_code == 404
