@@ -120,7 +120,15 @@ async def update_reservation(
         after_data={"start_at": start_at.isoformat(), "end_at": end_at.isoformat(), "purpose": reservation.purpose},
     )
     await db.commit()
-    return await repository.get(db, reservation.id)
+
+    saved = await repository.get(db, reservation.id)
+    # Posunutý termín se musí dozvědět i ten, kdo ho neposouval - jinak
+    # přijde k autu ve chvíli, kdy už je pryč.
+    if saved.kind == "reservation":
+        await notifications.notify_reservation_changed(
+            db, vehicle=saved.vehicle, reservation=saved, actor=actor,
+        )
+    return saved
 
 
 async def cancel_reservation(
@@ -141,7 +149,14 @@ async def cancel_reservation(
         entity_id=str(reservation.id), after_data={"reason": (reason or "").strip() or None},
     )
     await db.commit()
-    return await repository.get(db, reservation.id)
+
+    saved = await repository.get(db, reservation.id)
+    if saved.kind == "reservation":
+        await notifications.notify_reservation_cancelled(
+            db, vehicle=saved.vehicle, reservation=saved, actor=actor,
+            reason=(reason or "").strip() or None,
+        )
+    return saved
 
 
 async def mark_fulfilled(db: AsyncSession, reservation: VehicleReservation) -> None:

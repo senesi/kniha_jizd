@@ -9,6 +9,13 @@ The recipient is the vehicle's responsible person. If a vehicle has none,
 or the responsible person is the very actor who caused the event, nothing
 is sent: telling someone about their own action is noise, not a
 notification.
+
+O tom, jestli se zpráva **skutečně odešle**, rozhoduje individuální
+nastavení příjemce (`preferences.is_enabled`). Kontrola je v `create()`,
+tedy v jediném místě, kterým prochází každá notifikace - aby nešlo
+přidat nový notify_* helper a na preference u něj zapomenout. Rozhoduje
+se za každého příjemce zvlášť: dva lidé u téže události můžou mít různé
+nastavení a jeden zprávu dostane, druhý ne.
 """
 import logging
 import uuid
@@ -17,9 +24,12 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.notifications import repository
+
 from app.core import mailer
 from app.models.core import User
 from app.models.fleet import Notification, Vehicle
+from app.modules.notifications import preferences
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +48,22 @@ async def _recipient(db: AsyncSession, vehicle: Vehicle, actor_id: uuid.UUID | N
 async def create(
     db: AsyncSession, *, user: User, vehicle: Vehicle | None, kind: str, title: str, body: str,
     link_url: str | None = None, dedupe_key: str | None = None, commit: bool = True,
-) -> Notification:
+) -> Notification | None:
+    """Zapíše notifikaci a pokusí se ji odeslat e-mailem.
+
+    Vrací `None`, když ji příjemce nechce (vypnutý typ v jeho nastavení)
+    nebo když už tutéž zprávu dostal (`dedupe_key`). Volající to nemusí
+    řešit - žádný z nich návratovou hodnotu nepotřebuje."""
+    if not await preferences.is_enabled(db, user.id, kind=kind):
+        # Vypnuté = nevznikne ani řádek. Zapisovat do schránky něco, co
+        # si člověk vypnul, by z "vypnuto" udělalo "jen bez e-mailu".
+        return None
+
+    if dedupe_key is not None and await repository.dedupe_key_exists(db, user.id, dedupe_key):
+        # Připomínka termínu chodí opakovaně, dokud se termín neposune -
+        # ale poslat ji smí jen jednou.
+        return None
+
     notification = Notification(
         user_id=user.id, vehicle_id=vehicle.id if vehicle else None, kind=kind, title=title, body=body,
         link_url=link_url, dedupe_key=dedupe_key,
@@ -79,21 +104,112 @@ def _vehicle_label(vehicle: Vehicle) -> str:
     return f"{vehicle.internal_code} ({vehicle.license_plate})"
 
 
+async def _reservation_recipients(
+    db: AsyncSession, *, vehicle: Vehicle, reservation, actor_id: uuid.UUID | None,
+) -> list[User]:
+    """Majitel rezervace a odpovědná osoba vozidla, každý nejvýš jednou.
+
+    Majitel je `reservation.user_id`, ne ten, kdo klikl - kdyby rezervaci
+    zakládal správce za někoho jiného, dozvědět se to má ten, komu
+    vozidlo pojede.
+
+    **Zakladatel dostane potvrzení i o vlastní rezervaci.** U ostatních
+    typů notifikací platí, že o vlastní akci se člověku nepíše, ale tady
+    to zadání chce výslovně a dává to smysl: potvrzení rezervace je
+    doklad, že termín skutečně vznikl. Komu to vadí, vypne si přepínač
+    „Rezervace vozidel" - od toho tam je.
+
+    `actor_id` se tedy nepoužívá k vyřazení příjemce; zůstává v podpisu,
+    protože rozhodnutí patří sem, ne do volajícího.
+
+    Jeden člověk nedostane dvě zprávy o téže věci, i když je současně
+    majitelem rezervace a odpovědnou osobou - `dict.fromkeys` sjednotí
+    id dřív, než se cokoliv odešle."""
+    wanted = [
+        candidate for candidate in dict.fromkeys(
+            [reservation.user_id, vehicle.responsible_user_id]
+        )
+        if candidate is not None
+    ]
+    if not wanted:
+        return []
+    result = await db.execute(
+        select(User).where(User.id.in_(wanted), User.is_active.is_(True))
+    )
+    return list(result.scalars().all())
+
+
+def _reservation_period(reservation) -> str:
+    return (
+        f"Od: {reservation.start_at.strftime('%d.%m.%Y %H:%M')}\n"
+        f"Do: {reservation.end_at.strftime('%d.%m.%Y %H:%M')}"
+    )
+
+
+async def _notify_reservation(
+    db: AsyncSession, *, vehicle: Vehicle, reservation, actor: User, kind: str,
+    title: str, body: str, commit: bool = True,
+) -> list[Notification]:
+    sent = []
+    for recipient in await _reservation_recipients(
+        db, vehicle=vehicle, reservation=reservation, actor_id=actor.id,
+    ):
+        notification = await create(
+            db, user=recipient, vehicle=vehicle, kind=kind, title=title, body=body,
+            link_url=f"{BASE_PATH}/reservations/{reservation.id}", commit=False,
+        )
+        if notification is not None:
+            sent.append(notification)
+    if commit:
+        await db.commit()
+    return sent
+
+
 async def notify_reservation_created(
     db: AsyncSession, *, vehicle: Vehicle, reservation, actor: User, commit: bool = True
 ):
     who = reservation.user.full_name if reservation.user else actor.full_name
-    return await _notify_responsible(
-        db, vehicle=vehicle, actor_id=actor.id, kind="reservation",
+    return await _notify_reservation(
+        db, vehicle=vehicle, reservation=reservation, actor=actor, kind="reservation",
         title=f"Nová rezervace – {_vehicle_label(vehicle)}",
         body=(
             f"{who} rezervoval(a) vozidlo {_vehicle_label(vehicle)}\n"
-            f"Od: {reservation.start_at.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Do: {reservation.end_at.strftime('%d.%m.%Y %H:%M')}\n"
+            f"{_reservation_period(reservation)}\n"
             f"Účel: {reservation.purpose or '-'}"
         ),
-        link_url=f"{BASE_PATH}/reservations/{reservation.id}",
         commit=commit,
+    )
+
+
+async def notify_reservation_changed(
+    db: AsyncSession, *, vehicle: Vehicle, reservation, actor: User, commit: bool = True
+):
+    return await _notify_reservation(
+        db, vehicle=vehicle, reservation=reservation, actor=actor, kind="reservation_change",
+        title=f"Změna rezervace – {_vehicle_label(vehicle)}",
+        body=(
+            f"{actor.full_name} změnil(a) rezervaci vozidla {_vehicle_label(vehicle)}\n"
+            f"Nový termín:\n{_reservation_period(reservation)}\n"
+            f"Účel: {reservation.purpose or '-'}"
+        ),
+        commit=commit,
+    )
+
+
+async def notify_reservation_cancelled(
+    db: AsyncSession, *, vehicle: Vehicle, reservation, actor: User, reason: str | None = None,
+    commit: bool = True,
+):
+    body = (
+        f"{actor.full_name} zrušil(a) rezervaci vozidla {_vehicle_label(vehicle)}\n"
+        f"{_reservation_period(reservation)}"
+    )
+    if reason:
+        body += f"\n\nDůvod: {reason}"
+    return await _notify_reservation(
+        db, vehicle=vehicle, reservation=reservation, actor=actor, kind="reservation_change",
+        title=f"Zrušená rezervace – {_vehicle_label(vehicle)}",
+        body=body, commit=commit,
     )
 
 
@@ -230,3 +346,70 @@ async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> None:
     for notification in result.scalars().all():
         notification.read_at = now
     await db.commit()
+
+
+# --- připomínky termínů vozidla (zadání 19/20) -------------------------
+
+async def deadline_recipients(db: AsyncSession, vehicle: Vehicle) -> list[User]:
+    """Odpovědná osoba vozidla a administrátoři, každý nejvýš jednou.
+
+    Administrátor se pozná podle oprávnění `fleet.vehicle.manage`, ne
+    podle názvu role - role se dají přejmenovat a přidat, oprávnění je
+    to, co skutečně znamená „spravuje celý vozový park".
+
+    Tahle funkce vrací **koho se to týká**, ne komu se odešle. Jestli
+    zprávu opravdu chtějí, rozhodne individuální nastavení každého z
+    nich až v `create()`. Odpovědná osoba tedy nedostává nic automaticky
+    jen proto, že je odpovědná osoba."""
+    from app.models.core import Permission, Role, RolePermission, UserRole
+
+    admins = (
+        select(UserRole.user_id)
+        .join(Role, Role.id == UserRole.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .where(Permission.code == "fleet.vehicle.manage")
+    )
+    condition = User.id.in_(admins)
+    if vehicle.responsible_user_id is not None:
+        condition = condition | (User.id == vehicle.responsible_user_id)
+
+    result = await db.execute(
+        select(User).where(condition, User.is_active.is_(True)).order_by(User.full_name)
+    )
+    return list(result.scalars().all())
+
+
+async def notify_vehicle_deadline(
+    db: AsyncSession, *, vehicle: Vehicle, deadline, commit: bool = True,
+) -> list[Notification]:
+    """Jedna připomínka jednoho termínu (STK, pojištění, známka, servis).
+
+    `dedupe_key` obsahuje kód termínu i jeho datum, takže:
+
+    - denní běh připomínek nerozešle totéž podruhé,
+    - jakmile se termín posune (nová STK), klíč se změní a příští
+      připomínka projde.
+
+    Bez toho by buď chodil e-mail každý den, nebo by se po prodloužení
+    termínu už nikdy neozval."""
+    if not deadline.is_actionable:
+        return []
+
+    due = deadline.due_date.isoformat() if deadline.due_date else "bez-data"
+    dedupe_key = f"deadline:{vehicle.id}:{deadline.code}:{due}:{deadline.level}"
+
+    sent = []
+    for recipient in await deadline_recipients(db, vehicle):
+        notification = await create(
+            db, user=recipient, vehicle=vehicle, kind="deadline",
+            title=f"{deadline.label} – {_vehicle_label(vehicle)}",
+            body=f"{_vehicle_label(vehicle)}: {deadline.detail}",
+            link_url=f"{BASE_PATH}/vehicles/{vehicle.id}",
+            dedupe_key=dedupe_key, commit=False,
+        )
+        if notification is not None:
+            sent.append(notification)
+    if commit:
+        await db.commit()
+    return sent

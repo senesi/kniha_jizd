@@ -746,3 +746,117 @@ to při psaní knihy jízd, která na detail jízdy odkazuje.
 **Proč v `_load_trip`.** Je to jediné místo, přes které chodí všech
 devět rout nad jízdou. Kontrola v každé z nich by byla devět příležitostí
 na jednu zapomenout.
+
+---
+
+## R38 — Preference notifikací se ukládají jako odchylky, ne jako kompletní tabulka
+
+**Rozhodnutí.** `core.user_notification_preferences` drží jen řádky pro
+volby, které uživatel skutečně uložil. **Chybějící řádek znamená
+výchozí hodnotu z katalogu** (`app/core/notification_types.py`), ne
+„vypnuto".
+
+**Jak jsou tedy defaulty reprezentované.** Jako `default_enabled` u
+každého typu v katalogu, tedy v kódu — ne jako data v databázi. „Nový
+uživatel má rezervace zapnuté" není řádek, který by mu někdo zakládal,
+ale to, že se na jeho neexistující volbu odpoví hodnotou z katalogu.
+Navenek je to k nerozeznání; rozdíl je v tom, co se stane potom.
+
+**Proč ne řádek pro každou kombinaci uživatel × typ.** Materializovaná
+tabulka vypadá jednodušeji, ale má tři problémy, které se objeví až
+časem:
+
+1. Každý nový typ notifikace by znamenal migraci s backfillem přes
+   všechny uživatele. Tenhle projekt počítá s tím, že typy budou
+   přibývat.
+2. Uživatel založený mimo aplikaci (import z Evidence nářadí, skript)
+   by zůstal bez řádků, a kdyby „bez řádku" znamenalo vypnuto, tiše by
+   přišel o všechno.
+3. Změna výchozí hodnoty by se nedala odlišit od vědomé volby
+   uživatele.
+
+**Co se stane při přidání nového typu.** Přibude jeden záznam v `TYPES`.
+Obrazovka ho vypíše sama, `create()` ho začne respektovat sama, všichni
+dosavadní uživatelé dostanou jeho výchozí hodnotu okamžitě a jejich
+uložené volby u ostatních typů se nehnou. Žádná migrace, žádný přepočet.
+
+**Uloží se i volba shodná s výchozí hodnotou.** Kdo si přepínač vědomě
+nechal zapnutý, nemá o své rozhodnutí přijít, kdyby se výchozí hodnota
+v katalogu jednou změnila.
+
+**Neznámý `kind` projde.** Zpráva, kterou někdo zapomene zaregistrovat,
+se musí odeslat, ne zmizet — na opačnou chybu by se přišlo až tím, že
+někomu nedorazí něco důležitého.
+
+---
+
+## R39 — Rozhoduje příjemce, ne role ani vozidlo
+
+**Rozhodnutí.** Kontrola preference je v `notifications/service.create()`
+— v jediném místě, kterým prochází každá notifikace — a ptá se na
+`user_id` konkrétního příjemce.
+
+**Proč tam.** Kdyby se kontrolovalo v jednotlivých `notify_*` helperech,
+příští přidaný helper by na ni zapomněl. Takhle to nejde obejít, aniž by
+někdo obešel celé zapisování notifikací.
+
+**Vypnuté = nevznikne ani řádek ve schránce.** Kdyby se zápis udělal a
+vynechal jen e-mail, znamenalo by „vypnuto" ve skutečnosti „jen bez
+e-mailu" — a to uživatel u přepínače nečeká.
+
+**Změna odpovědné osoby nic nedědí.** Příjemci se počítají z aktuálního
+`vehicle.responsible_user_id` a každý se pak ptá svých vlastních voleb.
+Nová odpovědná osoba tedy nepřebírá nastavení předchozí a nedostává nic
+automaticky jen proto, že je odpovědná osoba.
+
+**Administrátoři u termínů se hledají podle oprávnění
+`fleet.vehicle.manage`**, ne podle názvu role — role se dají
+přejmenovat a přidat, oprávnění je to, co doopravdy znamená „spravuje
+celý vozový park". I administrátor si ale termíny může vypnout;
+aplikace nemá žádnou cestu, jak někomu notifikaci vnutit, a nastavení
+se vždycky ukládá přihlášenému uživateli, nikdy uživateli z formuláře.
+
+---
+
+## R40 — Potvrzení o rezervaci dostane i ten, kdo ji založil
+
+**Rozhodnutí.** Notifikace o rezervaci (vznik, změna, zrušení) jdou
+**majiteli rezervace i odpovědné osobě vozidla**, včetně případu, kdy je
+majitel tím, kdo akci právě provedl.
+
+**Proč je to změna.** Dosud platilo pravidlo „o vlastní akci se člověku
+nepíše" a jediným příjemcem byla odpovědná osoba. U rezervací to ale
+znamenalo, že kdo si vozidlo zamluvil, neměl žádné potvrzení — a
+formulář neumí „rezervovat za někoho jiného", takže majitel je vždycky
+zakladatel a bez téhle změny by nedostal nikdy nic.
+
+**Proč je to teď v pořádku.** Námitka „e-mail o vlastním kliknutí je
+šum" byla dřív hard-coded pravidlo. Teď je to volba: komu potvrzení
+vadí, vypne si přepínač „Rezervace vozidel". U ostatních typů
+(výpůjčky, závady, schvalování) zůstává vyřazení iniciátora beze změny.
+
+**Dvě zprávy o jedné věci nehrozí.** Když je majitel rezervace zároveň
+odpovědnou osobou vozidla, sjednotí se podle id dřív, než se cokoliv
+odešle.
+
+---
+
+## R41 — Připomínku termínu chrání `dedupe_key`, ne paměť plánovače
+
+**Rozhodnutí.** `dedupe_key` připomínky obsahuje vozidlo, kód termínu,
+jeho datum **a stupeň naléhavosti**:
+`deadline:<vehicle>:<code>:<due>:<level>`.
+
+**Proč.** Připomínky se spouštějí denně (`scripts/send_deadline_reminders.py`
+z cronu). Bez klíče by e-mail chodil každý den, dokud se termín
+nevyřeší. S klíčem jen podle vozidla a termínu by se zase po prodloužení
+STK už nikdy neozval.
+
+**Datum v klíči** znamená, že nová STK = nový klíč = připomínka smí
+projít znovu. **Stupeň v klíči** znamená, že přechod z oranžové na
+červenou se ohlásí — do té chvíle zbývá pár dní a je to jiná informace
+než „blíží se to".
+
+**Skript sám nic neplánuje.** Opakované spouštění je práce systému, ne
+aplikace; takhle jde běh kdykoliv zopakovat ručně nebo si ho prohlédnout
+nanečisto (`--dry-run`), aniž by se cokoliv odeslalo.

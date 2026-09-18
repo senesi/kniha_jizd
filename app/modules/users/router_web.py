@@ -4,13 +4,14 @@ import uuid
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import flash
+from app.core import flash, notification_types
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission
 from app.core.security import WeakPassword
 from app.core.templates import render_page
 from app.models.core import User
+from app.modules.notifications import preferences as notification_preferences
 from app.modules.users import service
 
 users_router = APIRouter(tags=["users-web"])
@@ -200,3 +201,40 @@ async def account_password_save(
     except (service.UserError, WeakPassword) as exc:
         return await render_page(request, "change_password.html", user, db, status_code=400, error=str(exc))
     return flash.redirect("/kniha-jizd/account/password", "password_changed")
+
+
+# --- individuální nastavení notifikací (zadání 20) --------------------
+
+@account_router.get("/account/notifications")
+async def account_notifications_form(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await render_page(
+        request, "account_notifications.html", user, db,
+        notification_types=notification_types.TYPES,
+        preferences=await notification_preferences.get_all(db, user.id),
+    )
+
+
+@account_router.post("/account/notifications", dependencies=[Depends(verify_csrf)])
+async def account_notifications_save(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ukládá nastavení **přihlášeného** uživatele, nikoho jiného.
+
+    Cílový uživatel se nebere z formuláře - vždycky je to ten, kdo je
+    přihlášený. Administrátor tak nemá jak cizí nastavení přepsat a
+    nemůže vzniknout ani omylem routa, která by to umožnila."""
+    form = await request.form()
+    # Nezaškrtnuté zaškrtávátko prohlížeč neposílá, takže se prochází
+    # katalog, ne to, co přišlo - jinak by vypnutí nešlo uložit.
+    values = {
+        notification_type.code: form.get(f"type_{notification_type.code}") is not None
+        for notification_type in notification_types.TYPES
+    }
+    await notification_preferences.save(db, user.id, values)
+    return flash.redirect("/kniha-jizd/account/notifications", "notifications_saved")

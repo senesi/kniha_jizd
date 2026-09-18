@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Nastavení notifikací &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">Nastavení notifikací</h1>
+  <a href="/kniha-jizd/account/profile" class="text-sm text-muted2 hover:text-accent">&larr; Můj profil</a>
+</div>
+
+<p class="text-sm text-muted2 mb-4 max-w-2xl">
+  Nastavení platí jen pro vás a nikoho jiného se nedotkne. Vypnutý typ nedorazí
+  e-mailem ani do schránky upozornění v aplikaci.
+</p>
+
+<form method="post" action="/kniha-jizd/account/notifications" class="max-w-2xl">
+  {{ csrf_field(request) }}
+
+  {# Celý řádek je klikací a vysoký aspoň 56 px - na telefonu se přepíná
+     palcem, ne miřením na zaškrtávátko. #}
+  <div class="kj-card !p-0 divide-y divide-divider-soft overflow-hidden">
+    {% for notification_type in notification_types %}
+    <label class="flex items-start gap-3 px-4 py-4 cursor-pointer hover:bg-surface has-[:checked]:bg-accent/5">
+      <input type="checkbox" name="type_{{ notification_type.code }}" value="1"
+             class="mt-0.5 w-6 h-6 shrink-0 rounded border-border2 text-accent focus:ring-accent"
+             {% if preferences.get(notification_type.code) %}checked{% endif %}>
+      <span class="min-w-0">
+        <span class="block font-bold">{{ notification_type.label }}</span>
+        <span class="block text-sm text-muted2 mt-0.5">{{ notification_type.description }}</span>
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
+  {# Tlačítko je na mobilu přes celou šířku a drží se u spodního okraje
+     obrazovky, aby se k němu nemuselo rolovat zpět nahoru. #}
+  <div class="sticky bottom-20 lg:bottom-0 mt-4 py-3 bg-canvas">
+    <button type="submit" class="kj-btn w-full sm:w-auto">Uložit nastavení</button>
+  </div>
+</form>
+{% endblock %}

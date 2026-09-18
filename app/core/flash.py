@@ -20,6 +20,7 @@ MESSAGES: dict[str, str] = {
     "password_changed": "Heslo bylo změněno.",
     "password_reset": "Heslo uživatele bylo nastaveno.",
     "profile_updated": "Profil byl uložen.",
+    "notifications_saved": "Nastavení notifikací bylo uloženo.",
     "notifications_read": "Upozornění byla označena jako přečtená.",
     "trip_started": "Výpůjčka byla zahájena. Šťastnou cestu!",
     "trip_ended": "Jízda byla uzavřena a zapsána do knihy jízd.",

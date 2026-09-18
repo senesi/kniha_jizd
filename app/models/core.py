@@ -114,3 +114,39 @@ class AppSetting(Base):
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(f"{SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
     )
+
+
+class UserNotificationPreference(Base):
+    """Volba jednoho uživatele u jednoho typu notifikace (zadání 20).
+
+    **Ukládají se jen odchylky, ne kompletní tabulka.** Chybějící řádek
+    znamená „výchozí hodnota podle katalogu"
+    (`app/core/notification_types.py`), ne „vypnuto".
+
+    Důvod je ten, že nový typ notifikace nemá vyžadovat migraci ani
+    dávkový přepočet přes všechny uživatele: jakmile přibude v katalogu,
+    platí pro každého jeho výchozí hodnota a dosavadní volby zůstanou
+    nedotčené. Zároveň se tím nemůže stát, že uživatel založený nějakou
+    jinou cestou (import, skript) zůstane bez řádků a přijde o všechno.
+
+    Volba je vždycky jen tohoto uživatele - viz ROZHODNUTI.md R38.
+    """
+
+    __tablename__ = "user_notification_preferences"
+    __table_args__ = (
+        UniqueConstraint("user_id", "notification_type", name="uq_core_user_notification_pref"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Kód z app/core/notification_types.py:TYPES.
+    notification_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship()

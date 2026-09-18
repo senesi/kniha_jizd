@@ -37,7 +37,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 5 | tankování / nabíjení, účtenky, OCR infrastruktura | **hotovo**; chybí jen napojení skutečného OCR enginu (`OCR_PROVIDER=none`) |
 | 6 | servis a dokumenty vozidla | **hotovo** |
 | 6b | kola/pneumatiky a výdaje vozidla | **hotovo** (nad rámec původních etap) |
-| 7 | e-mailové notifikace | `app/core/mailer.py` + `modules/notifications` hotové, chybí plánované připomínky termínů |
+| 7 | e-mailové notifikace | **hotovo** (mailer, notifikace, individuální nastavení, připomínky termínů); zbývá jen naplánovat `scripts/send_deadline_reminders.py` cronem na VPS |
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | **hotovo** |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
 | 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | Dockerfile hotový, **na VPS zatím nic nevzniklo** |
@@ -105,7 +105,8 @@ tam, až modul vznikne.
 app/
   core/        průřezové věci: config, db, deps (oprávnění), csrf, audit,
                photos, documents, previews (miniatury dokumentů),
-               pdf_font (diakritika v PDF), mailer, app_settings,
+               pdf_font (diakritika v PDF), notification_types
+               (katalog typů notifikací), mailer, app_settings,
                fleet_status
                (semafor), fuel (l vs. kWh), ocr (pomůcka, ne závislost),
                labels, flash, templates
