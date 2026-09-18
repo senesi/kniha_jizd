@@ -61,10 +61,18 @@
     </div>
 
     {% if target %}
+    {# Po neúspěšném uložení se zaškrtnutí bere z odeslaného formuláře (tam
+       je to bool), při prvním otevření ze stavu účtu. Prázdné form.get()
+       znamená „formulář se ještě neodesílal", ne „odškrtnuto" - při POSTu
+       je v payloadu vždycky True nebo False.
+
+       Podmínkový výraz musí být v {% set %}, ne přímo v {% if %}:
+       „{% if A if B else C %}" Jinja neparsuje. #}
+    {% set is_active_checked = form.get("is_active") if form.get("is_active") is not none else target.is_active %}
     <label class="flex items-center gap-2 mt-4 cursor-pointer">
       <input type="checkbox" name="is_active" value="1"
              class="w-5 h-5 rounded border-border2 text-accent focus:ring-accent"
-             {% if form.get("is_active") if form.get("is_active") is not none else target.is_active %}checked{% endif %}>
+             {% if is_active_checked %}checked{% endif %}>
       <span class="text-sm font-semibold">Účet je aktivní (uživatel se může přihlásit)</span>
     </label>
     {% endif %}
