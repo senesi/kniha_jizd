@@ -48,6 +48,7 @@ TRIP_PURPOSES = ["servis", "montaz", "doprava_materialu", "schuzka", "sluzebni_c
 # administrátor; pro ostatní vozidlo neexistuje nikde - v seznamu, na
 # přehledu, ve výběru, v kalendáři ani přes QR.
 VEHICLE_VISIBILITIES = ["all", "restricted"]
+VEHICLE_SCOPES = ["company", "private"]
 
 # Žádost o použití vozidla u vozidel s approval_required (požadavek B).
 # "expired" je jen čtená vlastnost, ne uložený stav - viz TripRequest.
@@ -140,6 +141,21 @@ class Vehicle(Base):
     # viz app/core/access.py:visible_vehicles_condition.
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="all")
 
+    # Firemní vozidlo, nebo soukromé vozidlo konkrétního uživatele
+    # (Etapa 11). Není to multi-tenancy: jedna instalace = jedna
+    # organizace, soukromé vozidlo je jen vozidlo, které patří jednomu
+    # člověku a firmy se netýká. Firemní pohledy (seznam, kalendář,
+    # kniha jízd, exporty) berou výhradně "company" - viz
+    # app/core/access.py:visible_vehicles_condition.
+    vehicle_scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="company", server_default="company", index=True,
+    )
+    # Vlastník soukromého vozidla. U firemního vždy prázdné; hlídá to
+    # CHECK v migraci 0008, ne jen aplikace.
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(f"{CORE_SCHEMA}.users.id", ondelete="RESTRICT"), nullable=True, index=True,
+    )
+
     # Public, unguessable identifier the printed QR code encodes
     # (/kniha-jizd/v/<qr_token>) - never the DB primary key, never the
     # license plate, so relabeling either never invalidates a printed
@@ -180,7 +196,13 @@ class Vehicle(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    responsible_user: Mapped["User | None"] = relationship()  # noqa: F821 - app.models.core.User
+    responsible_user: Mapped["User | None"] = relationship(  # noqa: F821 - app.models.core.User
+        foreign_keys=[responsible_user_id],
+    )
+    #: Vlastník soukromého vozidla; u firemního vždy None.
+    owner: Mapped["User | None"] = relationship(  # noqa: F821
+        foreign_keys=[owner_user_id],
+    )
     photos: Mapped[list["Attachment"]] = relationship(
         viewonly=True, order_by="Attachment.created_at",
         primaryjoin=lambda: and_(
@@ -189,6 +211,11 @@ class Vehicle(Base):
             Attachment.deleted_at.is_(None),
         ),
     )
+
+
+    @property
+    def is_private(self) -> bool:
+        return self.vehicle_scope == "private"
 
 
 class VehicleAssignment(Base):

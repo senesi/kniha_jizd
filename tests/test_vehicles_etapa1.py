@@ -3,7 +3,7 @@ import uuid
 
 from sqlalchemy import select
 
-from tests.conftest import create_vehicle, extract_csrf_token, login
+from tests.conftest import VEHICLE_FORM, create_vehicle, extract_csrf_token, login
 
 
 async def _vehicle_row(vehicle_id: str):
@@ -159,10 +159,26 @@ async def test_driver_cannot_manage_vehicles(logged_in_client, csrf_token, anon_
     await login(anon_client, basic_user)
     assert (await anon_client.get("/kniha-jizd/vehicles")).status_code == 200
     assert (await anon_client.get(f"/kniha-jizd/vehicles/{vehicle_id}")).status_code == 200
-    assert (await anon_client.get("/kniha-jizd/vehicles/new")).status_code == 403
     assert (await anon_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/edit")).status_code == 403
     assert (await anon_client.get("/kniha-jizd/users")).status_code == 403
     assert (await anon_client.get("/kniha-jizd/settings")).status_code == 403
+
+    # Od Etapy 11 se řidič na zakládací formulář dostane - ale jen kvůli
+    # SVÉMU soukromému vozidlu. Formulář mu ani nenabídne jinou volbu a
+    # firemní vozidlo přes něj založit nejde.
+    form = await anon_client.get("/kniha-jizd/vehicles/new")
+    assert form.status_code == 200
+    assert 'value="private"' in form.text
+    assert "Komu vozidlo patří" not in form.text, "řidič nemá na výběr"
+
+    refused = await anon_client.post(
+        "/kniha-jizd/vehicles/new",
+        data={**VEHICLE_FORM, "csrf_token": extract_csrf_token(form.text),
+              "internal_code": "VOZ-DRV-2", "license_plate": "1JJ 2222",
+              "vehicle_scope": "company"},
+        follow_redirects=False,
+    )
+    assert refused.status_code == 403
 
 
 # --- QR ----------------------------------------------------------------

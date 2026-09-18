@@ -16,8 +16,59 @@
 <div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-5 text-sm font-semibold">{{ error }}</div>
 {% endif %}
 
+{% set current_scope = form.get("vehicle_scope") or (vehicle.vehicle_scope if vehicle else "company") %}
+{% set is_private = current_scope == "private" %}
+
 <form method="post" action="{{ '/kniha-jizd/vehicles/new' if not vehicle else '/kniha-jizd/vehicles/' ~ vehicle.id ~ '/edit' }}">
   {{ csrf_field(request) }}
+
+  {# Rozsah vozidla. U existujícího vozidla se nepřepíná - z firemního
+     auta by se tím dalo udělat soukromé i s celou historií jízd. #}
+  {% if can_choose_scope %}
+  <div class="kj-card mb-4">
+    <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Komu vozidlo patří</h2>
+    <div class="grid grid-cols-2 gap-2">
+      {% for option, caption, note in [
+        ("company", "Firemní", "Sdílené, s rezervacemi a firemní knihou jízd."),
+        ("private", "Soukromé", "Patří jednomu uživateli, firemní přehledy ho nevidí."),
+      ] %}
+      <label class="flex items-start gap-2 rounded-xl border border-border2 bg-white px-3 py-2.5 cursor-pointer hover:bg-surface has-[:checked]:border-accent has-[:checked]:bg-accent/5">
+        <input type="radio" name="vehicle_scope" value="{{ option }}" required
+               class="mt-0.5 w-4 h-4 text-accent focus:ring-accent"
+               {% if option == current_scope %}checked{% endif %}>
+        <span class="min-w-0">
+          <span class="block text-sm font-bold">{{ caption }}</span>
+          <span class="block text-xs text-muted2">{{ note }}</span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <input type="hidden" name="vehicle_scope" value="{{ current_scope }}">
+  {% if is_private and not vehicle %}
+  <div class="kj-card mb-4 border-l-4 !border-l-accent">
+    <div class="font-bold">Soukromé vozidlo</div>
+    <p class="text-sm text-muted2 mt-1">
+      Vozidlo uvidíte jen vy. Nezobrazí se mezi firemními, v rezervacích ani ve
+      firemní knize jízd.
+    </p>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if can_assign_owner %}
+  <div class="kj-card mb-4">
+    <label class="kj-label mt-0">Vlastník soukromého vozidla</label>
+    {% set current_owner = form.get("owner_user_id") or (vehicle.owner_user_id if vehicle else none) %}
+    <select class="kj-input" name="owner_user_id">
+      <option value="">— vyberte —</option>
+      {% for candidate in users %}
+      <option value="{{ candidate.id }}" {% if current_owner and candidate.id|string == current_owner|string %}selected{% endif %}>{{ candidate.full_name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
 
   <div class="kj-card mb-4">
     <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Identifikace</h2>
@@ -93,9 +144,11 @@
   <div class="kj-card mb-4">
     <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Provoz</h2>
     <div class="grid sm:grid-cols-2 gap-x-4">
-      <div>
+      {# Odpovědná osoba je firemní role - u soukromého vozidla nemá
+         význam a schéma ji stejně zahodí (vehicles/schemas.py). #}
+      <div {% if is_private %}class="hidden"{% endif %}>
         <label class="kj-label">Odpovědná osoba</label>
-        <select class="kj-input" name="responsible_user_id">
+        <select class="kj-input" name="responsible_user_id" {% if is_private %}disabled{% endif %}>
           {% set current_responsible = form.get('responsible_user_id') or (vehicle.responsible_user_id if vehicle else none) %}
           <option value="">— nepřiřazeno —</option>
           {% for candidate in users %}

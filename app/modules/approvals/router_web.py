@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash
-from app.core.access import assert_vehicle_visible, sees_every_vehicle
+from app.core.access import assert_company_vehicle, assert_vehicle_visible, sees_every_vehicle
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, get_user_permission_codes
@@ -59,6 +59,9 @@ async def request_vehicle(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vozidlo nebylo nalezeno.")
     codes = await get_user_permission_codes(db, user.id)
     assert_vehicle_visible(codes, vehicle, user)
+    # Schvalování služební jízdy je firemní proces; u vlastního auta
+    # nedává smysl a zadání ho pro soukromá vozidla nechce (B8).
+    assert_company_vehicle(vehicle)
 
     try:
         trip_request = await service.create_request(

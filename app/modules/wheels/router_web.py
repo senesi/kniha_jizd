@@ -9,6 +9,7 @@ from app.core import flash
 from app.core.access import (
     MANAGE_ANY,
     MANAGE_OWN,
+    MANAGE_PRIVATE,
     assert_vehicle_manage_access,
     assert_vehicle_visible,
     can_manage_vehicle,
@@ -115,7 +116,7 @@ async def wheel_set_create(
     request: Request,
     vehicle_id: uuid.UUID,
     photo: UploadFile | None = File(None),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)
@@ -158,7 +159,7 @@ async def wheel_set_create(
 async def wheels_fit(
     request: Request,
     vehicle_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)
@@ -214,7 +215,7 @@ async def wheels_remove(
     vehicle_id: uuid.UUID,
     removed_at: str = Form(...),
     odometer_km: str = Form(...),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)
@@ -241,7 +242,7 @@ async def wheels_remove(
 async def wheel_set_update(
     request: Request,
     wheel_set_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     wheel_set = await repository.get_set(db, wheel_set_id)
@@ -267,7 +268,7 @@ async def wheel_set_update(
 @wheels_router.post("/wheel-sets/{wheel_set_id}/delete", dependencies=[Depends(verify_csrf)])
 async def wheel_set_delete(
     wheel_set_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     wheel_set = await repository.get_set(db, wheel_set_id)

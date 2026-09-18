@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.access import MANAGE_ANY, MANAGE_OWN
+from app.core.access import can_manage_vehicle, MANAGE_ANY, MANAGE_OWN
 from app.core.audit import log_action
 from app.models.core import User
 from app.models.fleet import DEFECT_PRIORITIES, DEFECT_STATUSES, Vehicle, VehicleDefect
@@ -29,11 +29,12 @@ class DefectError(Exception):
 
 
 def can_manage_defect(vehicle: Vehicle, actor: User, codes: set[str]) -> bool:
-    """Řešit závady smí administrátor, držitel fleet.defect.manage a
-    odpovědná osoba daného vozidla."""
+    """Řešit závady smí administrátor, držitel fleet.defect.manage,
+    odpovědná osoba daného vozidla - a vlastník soukromého vozidla, kde
+    žádná odpovědná osoba není."""
     if MANAGE_ANY in codes or "fleet.defect.manage" in codes:
         return True
-    return MANAGE_OWN in codes and vehicle.responsible_user_id == actor.id
+    return can_manage_vehicle(codes, vehicle, actor)
 
 
 async def report_defect(

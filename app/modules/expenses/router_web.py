@@ -266,8 +266,6 @@ def _assert_can_edit(expense, actor: User, codes: set[str]) -> None:
     Řidič, který zapomněl doklad, si ho má umět doplnit sám."""
     if expense.created_by == actor.id:
         return
-    if MANAGE_ANY in codes:
-        return
-    if MANAGE_OWN in codes and expense.vehicle.responsible_user_id == actor.id:
+    if can_manage_vehicle(codes, expense.vehicle, actor):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tento výdaj není váš.")

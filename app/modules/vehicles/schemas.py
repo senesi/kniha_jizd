@@ -1,9 +1,15 @@
 import uuid
 from datetime import date
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.fleet import FUEL_TYPES, VEHICLE_STATUSES, VEHICLE_TYPES, VEHICLE_VISIBILITIES
+from app.models.fleet import (
+    FUEL_TYPES,
+    VEHICLE_SCOPES,
+    VEHICLE_STATUSES,
+    VEHICLE_TYPES,
+    VEHICLE_VISIBILITIES,
+)
 
 
 class VehicleBase(BaseModel):
@@ -22,6 +28,10 @@ class VehicleBase(BaseModel):
     is_active: bool = True
     approval_required: bool = False
     visibility: str = "all"
+    # Firemní, nebo soukromé vozidlo jednoho uživatele. Výchozí "company"
+    # drží dosavadní chování: kdo pole neposílá, zakládá firemní vozidlo.
+    vehicle_scope: str = "company"
+    owner_user_id: uuid.UUID | None = None
     stk_valid_until: date | None = None
     vignette_valid_until: date | None = None
     insurance_company: str | None = Field(default=None, max_length=255)
@@ -53,6 +63,31 @@ class VehicleBase(BaseModel):
         if value not in VEHICLE_VISIBILITIES:
             raise ValueError(f"Neplatná viditelnost vozidla: {value}")
         return value
+
+    @field_validator("vehicle_scope")
+    @classmethod
+    def _valid_scope(cls, value: str) -> str:
+        if value not in VEHICLE_SCOPES:
+            raise ValueError(f"Neplatný rozsah vozidla: {value}")
+        return value
+
+    @model_validator(mode="after")
+    def _owner_matches_scope(self):
+        """Soukromé vozidlo má vlastníka, firemní ne.
+
+        Totéž hlídá CHECK v migraci 0008; tady je to proto, aby uživatel
+        dostal srozumitelnou hlášku místo chyby z databáze. Firemnímu
+        vozidlu se vlastník tiše odebere - přepnutí rozsahu ve formuláři
+        nemá padat na hodnotě, kterou uživatel nevidí."""
+        if self.vehicle_scope == "private":
+            if self.owner_user_id is None:
+                raise ValueError("U soukromého vozidla je potřeba vlastník.")
+            # Odpovědná osoba je firemní role a u soukromého vozidla nedává
+            # smysl - viz app/core/access.py.
+            self.responsible_user_id = None
+        else:
+            self.owner_user_id = None
+        return self
 
     @field_validator("fuel_type")
     @classmethod

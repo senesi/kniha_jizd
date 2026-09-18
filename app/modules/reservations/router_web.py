@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash
-from app.core.access import assert_vehicle_visible, visible_vehicles_condition
+from app.core.access import assert_company_vehicle, assert_vehicle_visible, visible_vehicles_condition
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, get_user_permission_codes, require_permission
@@ -44,6 +44,8 @@ async def _load_vehicle(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vozidlo nebylo nalezeno.")
     if codes is not None and user is not None:
         assert_vehicle_visible(codes, vehicle, user)
+    # Firemní proces - soukromé vozidlo do něj nepatří (B8).
+    assert_company_vehicle(vehicle)
     return vehicle
 
 

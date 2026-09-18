@@ -29,7 +29,7 @@ from app.core.documents import (
     save_document_file,
     validate_document,
 )
-from app.core.access import MANAGE_ANY, MANAGE_OWN
+from app.core.access import can_manage_vehicle, MANAGE_ANY, MANAGE_OWN
 from app.models.core import User
 from app.models.fleet import ALL_DOCUMENT_TYPES, DOCUMENT_TYPES, Vehicle, VehicleDocument
 from app.modules.documents import repository
@@ -48,10 +48,13 @@ class DocumentError(Exception):
 
 
 def can_manage_documents(vehicle: Vehicle, actor: User, codes: set[str]) -> bool:
-    """Nahrávat a mazat smí správce vozidla, ne každý, kdo ho vidí."""
-    if MANAGE_ANY in codes:
-        return True
-    return MANAGE_OWN in codes and vehicle.responsible_user_id == actor.id
+    """Nahrávat a mazat smí správce vozidla, ne každý, kdo ho vidí.
+
+    Deleguje se na `can_manage_vehicle`, aby „správce vozidla" znamenal
+    všude totéž - včetně vlastníka soukromého vozidla. Dřív tu byla
+    vlastní kopie té úvahy a vlastník si ke svému autu nemohl nahrát
+    technický průkaz."""
+    return can_manage_vehicle(codes, vehicle, actor)
 
 
 async def add_document(

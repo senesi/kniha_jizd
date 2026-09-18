@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Audit a aktivita &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="text-2xl font-extrabold tracking-tight">Audit a aktivita</h1>
+  <p class="text-sm text-muted2">
+    Kompletní historie změn a přihlášení. Záznamy nejde měnit ani mazat.
+  </p>
+</div>
+
+<form method="get" action="/kniha-jizd/admin/audit" class="kj-card mb-4">
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-4">
+    <div>
+      <label class="kj-label mt-0">Od</label>
+      <input class="kj-input" type="date" name="from" value="{{ filter.date_from.isoformat() if filter.date_from else '' }}">
+    </div>
+    <div>
+      <label class="kj-label mt-0 sm:mt-0">Do</label>
+      <input class="kj-input" type="date" name="to" value="{{ filter.date_to.isoformat() if filter.date_to else '' }}">
+    </div>
+    <div>
+      <label class="kj-label lg:mt-0">Uživatel</label>
+      <select class="kj-input" name="user">
+        <option value="">Kdokoliv</option>
+        {% for actor in actors %}
+        <option value="{{ actor.id }}" {% if filter.user_id == actor.id %}selected{% endif %}>{{ actor.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label lg:mt-0">Vozidlo</label>
+      <select class="kj-input" name="vehicle">
+        <option value="">Jakékoliv</option>
+        {% for vehicle in audited_vehicles %}
+        <option value="{{ vehicle.id }}" {% if filter.vehicle_id == vehicle.id %}selected{% endif %}>{{ vehicle.license_plate }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Modul</label>
+      <select class="kj-input" name="module">
+        <option value="">Všechny</option>
+        {% for module in modules %}
+        <option value="{{ module }}" {% if filter.module == module %}selected{% endif %}>{{ labels.AUDIT_MODULE.get(module, module) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Akce</label>
+      <select class="kj-input" name="action">
+        <option value="">Všechny</option>
+        {% for action in actions %}
+        <option value="{{ action }}" {% if filter.action == action %}selected{% endif %}>{{ labels.AUDIT_ACTION.get(action, action) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Druh události</label>
+      <select class="kj-input" name="events">
+        <option value="">Změny i přihlášení</option>
+        <option value="changes" {% if filter.event_kind == "changes" %}selected{% endif %}>Jen změny dat</option>
+        <option value="logins" {% if filter.event_kind == "logins" %}selected{% endif %}>Jen přihlášení</option>
+      </select>
+    </div>
+    <div>
+      <label class="kj-label">Výsledek</label>
+      <select class="kj-input" name="result">
+        <option value="">Jakýkoliv</option>
+        <option value="success" {% if filter.result == "success" %}selected{% endif %}>Úspěch</option>
+        <option value="failure" {% if filter.result == "failure" %}selected{% endif %}>Neúspěch</option>
+      </select>
+    </div>
+  </div>
+
+  <label class="kj-label">Hledat</label>
+  <input class="kj-input" name="q" value="{{ filter.search or '' }}"
+         placeholder="popis, typ objektu nebo jeho ID">
+
+  <div class="flex flex-wrap items-center gap-2 mt-4">
+    <button type="submit" class="kj-btn">Zobrazit</button>
+    {% if not filter.is_empty %}
+    <a href="/kniha-jizd/admin/audit" class="kj-btn-secondary">Zrušit filtr</a>
+    {% endif %}
+    <span class="text-xs text-muted2">{{ total }} záznamů</span>
+  </div>
+</form>
+
+{% if not entries %}
+<div class="kj-card text-center text-muted2">Zadanému filtru neodpovídá žádný záznam.</div>
+{% endif %}
+
+{# Desktop tabulka, mobil karty. Osm sloupců se na telefon nevejde a
+   vodorovné rolování se u auditu čte hůř než seznam karet. #}
+{% if entries %}
+<div class="kj-card !p-0 overflow-x-auto hidden lg:block">
+  <table class="w-full border-collapse">
+    <thead>
+      <tr class="bg-surface">
+        <th class="kj-th">Kdy</th>
+        <th class="kj-th">Kdo</th>
+        <th class="kj-th">Akce</th>
+        <th class="kj-th">Modul / objekt</th>
+        <th class="kj-th">Vozidlo</th>
+        <th class="kj-th">Popis</th>
+        <th class="kj-th"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr class="hover:bg-surface">
+        <td class="kj-td whitespace-nowrap text-sm">{{ entry.created_at | dt }}</td>
+        <td class="kj-td text-sm">{{ entry.user.full_name if entry.user else "—" }}</td>
+        <td class="kj-td">
+          <span class="kj-badge {% if entry.result == "failure" %}bg-danger/15 text-danger{% elif entry.is_login_event %}bg-info/15 text-info{% else %}bg-surface text-subtle border border-divider{% endif %}">
+            {{ labels.AUDIT_ACTION.get(entry.action, entry.action) }}
+          </span>
+        </td>
+        <td class="kj-td text-sm">
+          {{ labels.AUDIT_MODULE.get(entry.module, entry.module) }}
+          <span class="block text-xs text-muted2">{{ entry.entity_type }}</span>
+        </td>
+        <td class="kj-td text-sm">
+          {% set vehicle = vehicles_by_id.get(entry.vehicle_id) %}
+          {{ vehicle.license_plate if vehicle else "—" }}
+        </td>
+        <td class="kj-td text-sm text-muted2">{{ entry.description or "" }}</td>
+        <td class="kj-td text-right">
+          <a href="/kniha-jizd/admin/audit/{{ entry.id }}" class="text-sm font-bold text-accent hover:underline">detail</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="grid gap-2 lg:hidden">
+  {% for entry in entries %}
+  <a href="/kniha-jizd/admin/audit/{{ entry.id }}" class="kj-card !p-4 block hover:bg-surface">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="kj-badge {% if entry.result == "failure" %}bg-danger/15 text-danger{% elif entry.is_login_event %}bg-info/15 text-info{% else %}bg-surface text-subtle border border-divider{% endif %}">
+        {{ labels.AUDIT_ACTION.get(entry.action, entry.action) }}
+      </span>
+      <span class="text-xs text-muted2">{{ entry.created_at | dt }}</span>
+    </div>
+    <div class="font-bold text-sm mt-1">{{ entry.user.full_name if entry.user else "—" }}</div>
+    <div class="text-xs text-muted2">
+      {{ labels.AUDIT_MODULE.get(entry.module, entry.module) }} &middot; {{ entry.entity_type }}
+      {% set vehicle = vehicles_by_id.get(entry.vehicle_id) %}
+      {% if vehicle %} &middot; {{ vehicle.license_plate }}{% endif %}
+    </div>
+    {% if entry.description %}
+    <div class="text-sm mt-1">{{ entry.description }}</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if last_page > 1 %}
+<div class="flex items-center justify-between gap-3 mt-4">
+  {% if filter.page > 1 %}
+  {% set prev_query = filter.query_string(page=(filter.page - 1) if filter.page > 2 else none) %}
+  <a href="/kniha-jizd/admin/audit{% if prev_query %}?{{ prev_query }}{% endif %}" class="kj-btn-secondary">&larr; Předchozí</a>
+  {% else %}<span></span>{% endif %}
+  <span class="text-xs text-muted2">strana {{ filter.page }} z {{ last_page }}</span>
+  {% if filter.page < last_page %}
+  <a href="/kniha-jizd/admin/audit?{{ filter.query_string(page=filter.page + 1) }}" class="kj-btn-secondary">Další &rarr;</a>
+  {% else %}<span></span>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

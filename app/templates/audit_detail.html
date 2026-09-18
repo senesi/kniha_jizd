@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Auditní záznam &ndash; Kniha jízd{% endblock %}
+
+{# Jen pro čtení: <pre>, ne formulář. Auditní záznam se přes UI needituje
+   a není kam ho odeslat - žádná POST routa v modulu neexistuje. #}
+{% macro payload(title, data) %}
+<div>
+  <div class="text-xs font-bold uppercase tracking-wide text-muted2 mb-1">{{ title }}</div>
+  {% if data %}
+  <pre class="text-xs bg-surface border border-divider-soft rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words">{{ data | tojson }}</pre>
+  {% else %}
+  <div class="text-sm text-muted">—</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="text-2xl font-extrabold tracking-tight">Auditní záznam</h1>
+  <a href="/kniha-jizd/admin/audit" class="text-sm text-muted2 hover:text-accent">&larr; Audit a aktivita</a>
+</div>
+
+<div class="kj-card mb-4">
+  <div class="flex items-center gap-2 flex-wrap mb-3">
+    <span class="kj-badge {% if entry.result == "failure" %}bg-danger/15 text-danger{% elif entry.is_login_event %}bg-info/15 text-info{% else %}bg-surface text-subtle border border-divider{% endif %}">
+      {{ labels.AUDIT_ACTION.get(entry.action, entry.action) }}
+    </span>
+    {% if entry.result %}
+    <span class="kj-badge {% if entry.result == "success" %}bg-success/15 text-success{% else %}bg-danger/15 text-danger{% endif %}">
+      {{ "Úspěch" if entry.result == "success" else "Neúspěch" }}
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+    <div>
+      <div class="text-xs text-muted2">Kdy</div>
+      <div class="font-semibold">{{ entry.created_at | dt }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted2">Kdo</div>
+      <div class="font-semibold">{{ entry.user.full_name if entry.user else "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted2">Modul</div>
+      <div class="font-semibold">{{ labels.AUDIT_MODULE.get(entry.module, entry.module) }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted2">Typ objektu</div>
+      <div class="font-semibold">{{ entry.entity_type }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted2">ID objektu</div>
+      <div class="font-mono text-xs break-all">{{ entry.entity_id or "—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-muted2">Vozidlo</div>
+      <div class="font-semibold">
+        {% if vehicle %}
+        <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-accent hover:underline">{{ vehicle.license_plate }}</a>
+        {% else %}—{% endif %}
+      </div>
+    </div>
+    {% if entry.ip_address %}
+    <div>
+      <div class="text-xs text-muted2">IP adresa</div>
+      <div class="font-mono text-xs">{{ entry.ip_address }}</div>
+    </div>
+    {% endif %}
+    {% if entry.user_agent %}
+    <div class="sm:col-span-2">
+      <div class="text-xs text-muted2">Prohlížeč</div>
+      <div class="text-xs break-all">{{ entry.user_agent }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if entry.description %}
+  <div class="mt-4 pt-4 border-t border-divider-soft">
+    <div class="text-xs text-muted2">Popis</div>
+    <div class="text-sm">{{ entry.description }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="kj-card grid gap-4 sm:grid-cols-2">
+  {{ payload("Původní hodnoty", entry.before_data) }}
+  {{ payload("Nové hodnoty", entry.after_data) }}
+</div>
+{% endblock %}

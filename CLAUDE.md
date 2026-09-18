@@ -41,6 +41,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | **hotovo** |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
 | 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | **nasazeno a běží**; zbývá položka v rozcestníku a pravidelné zálohy |
+| 11 | audit a aktivita, soukromá vozidla uživatelů | **hotovo** (nad rámec původních etap) |
 
 Datový model (`app/models/fleet.py`) je navržený pro všechny etapy
 najednou, aby pozdější etapy nepotřebovaly přestavbu schématu. Migrace
@@ -115,8 +116,8 @@ app/
   modules/     <modul>/{router_web,service,repository,schemas}.py
                hotové: auth, dashboard, vehicles, trips, reservations,
                defects, approvals, fuelings, services, documents,
-               wheels, expenses, logbook, users, notifications,
-               settings
+               wheels, expenses, logbook, audit, users,
+               notifications, settings
   templates/   Jinja2, mobile-first, Tailwind přes CDN
   static/      vendorované JS (qr-scanner), favicony
 ```
@@ -162,6 +163,27 @@ ani po načtení QR kódu.
   obcházení viditelnosti, a má ho i odpovědná osoba.
 
 Nová routa, která pracuje s vozidlem, musí projít jedním z těch dvou.
+
+## 7c. Firemní a soukromá vozidla
+
+Vozidlo má `vehicle_scope`: `company` (firemní) nebo `private` (soukromé
+vozidlo jednoho uživatele, s vyplněným `owner_user_id`). **Není to
+multi-tenancy** — jedna instalace = jedna organizace; další firma dostane
+vlastní deployment s vlastní databází.
+
+- Soukromé vozidlo vidí **jen vlastník a administrátor**; pro ostatní
+  neexistuje (404, ne 403).
+- Vlastník své soukromé vozidlo plně **spravuje** — dokumenty, servis,
+  kola, výdaje, závady, jízdy. Zajišťuje to `can_manage_vehicle`, na
+  kterou musí delegovat každá kontrola typu „smí tohle vozidlo
+  spravovat".
+- **Firemní pohledy berou výhradně `company`** — i vlastníkovi. Platí to
+  pro seznam vozidel, kalendář rezervací, knihu jízd, exporty i přehled.
+  Svoje auta má uživatel pod „Moje vozidla" (`/vehicles/private`).
+- `visible_vehicles_condition(..., scope=...)` má výchozí hodnotu
+  `company`: kdo na parametr zapomene, dostane firemní pohled, ne únik.
+- Rezervace a schvalování soukromá vozidla odmítají
+  (`assert_company_vehicle`) — jsou to firemní procesy.
 
 ## 7b. Validace: kdy blokovat a kdy se zeptat
 

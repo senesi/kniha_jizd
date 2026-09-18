@@ -141,3 +141,54 @@ ROLE: dict[str, str] = {
     "odpovedna_osoba": "Odpovědná osoba",
     "user": "Řidič",
 }
+
+
+# --- audit ------------------------------------------------------------
+# Popisky pro administrátorskou obrazovku auditu. Kód, který tu není, se
+# zobrazí tak, jak je - lepší surový kód než prázdno u nové akce.
+
+AUDIT_MODULE: dict[str, str] = {
+    "auth": "Přihlášení",
+    "approvals": "Schvalování",
+    "defects": "Závady",
+    "documents": "Dokumenty",
+    "expenses": "Výdaje",
+    "fuelings": "Tankování / nabíjení",
+    "logbook": "Kniha jízd",
+    "notifications": "Notifikace",
+    "reservations": "Rezervace",
+    "services": "Servis",
+    "settings": "Nastavení",
+    "trips": "Jízdy",
+    "users": "Uživatelé",
+    "vehicles": "Vozidla",
+    "wheels": "Kola a pneumatiky",
+}
+
+AUDIT_ACTION: dict[str, str] = {
+    "create": "Vytvoření",
+    "update": "Změna",
+    "delete": "Smazání",
+    "cancel": "Zrušení",
+    "approve": "Schválení",
+    "reject": "Zamítnutí",
+    "consume": "Uplatnění",
+    "status_change": "Změna stavu",
+    "priority_change": "Změna priority",
+    "odometer_correction": "Oprava tachometru",
+    "trip_start": "Zahájení jízdy",
+    "trip_end": "Ukončení jízdy",
+    "trip_cancel": "Zrušení jízdy",
+    "trip_times_edit": "Oprava časů jízdy",
+    "driver_add": "Přidání řidiče",
+    "driver_remove": "Odebrání řidiče",
+    "note_add": "Přidání poznámky",
+    "receipt_add": "Přidání dokladu",
+    "fit": "Nasazení kol",
+    "remove": "Sundání kol",
+    "password_change": "Změna hesla",
+    "password_reset": "Reset hesla",
+    "login": "Přihlášení",
+    "login_failed": "Neúspěšné přihlášení",
+    "logout": "Odhlášení",
+}

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash, notification_types
+from app.core.audit import log_action
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission
@@ -236,5 +237,16 @@ async def account_notifications_save(
         notification_type.code: form.get(f"type_{notification_type.code}") is not None
         for notification_type in notification_types.TYPES
     }
-    await notification_preferences.save(db, user.id, values)
+    before = await notification_preferences.get_all(db, user.id)
+    after = await notification_preferences.save(db, user.id, values, commit=False)
+    changed = sorted(code for code, value in after.items() if before.get(code) != value)
+    if changed:
+        await log_action(
+            db, user_id=user.id, action="update", module="notifications",
+            entity_type="notification_preferences", entity_id=str(user.id),
+            before_data={code: before[code] for code in changed},
+            after_data={code: after[code] for code in changed},
+            description="Změna vlastního nastavení notifikací",
+        )
+    await db.commit()
     return flash.redirect("/kniha-jizd/account/notifications", "notifications_saved")

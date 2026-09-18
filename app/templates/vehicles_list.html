@@ -1,24 +1,37 @@
 {% extends "base.html" %}
 {% from "_macros.html" import dot, status_badge %}
-{% from "_vehicle.html" import thumb, visibility_badge, approval_badge %}
+{% from "_vehicle.html" import thumb, visibility_badge, approval_badge, private_badge %}
 {% block title %}Vozidla &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
 <div class="flex items-center justify-between gap-3 mb-5">
-  <h1 class="text-2xl font-extrabold tracking-tight">Vozidla</h1>
+  <h1 class="text-2xl font-extrabold tracking-tight">
+    {% if scope == "private" %}Soukromá vozidla{% else %}Vozidla{% endif %}
+  </h1>
   {% if can_create %}
   <a href="/kniha-jizd/vehicles/new" class="kj-btn">+ Nové vozidlo</a>
   {% endif %}
 </div>
 
-<div class="flex gap-2 mb-5">
-  <a href="/kniha-jizd/vehicles" class="kj-badge px-4 py-2 {% if only != 'mine' %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">Všechna</a>
+{# Firemní a soukromá vozidla se nemíchají (B3). Záložku „Soukromá" vidí
+   jen administrátor, a to kvůli podpoře - ostatní mají svoje pod
+   „Moje vozidla". #}
+{% set is_company = scope != "private" %}
+<div class="flex flex-wrap gap-2 mb-5">
+  <a href="/kniha-jizd/vehicles" class="kj-badge px-4 py-2 {% if is_company and only != 'mine' %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">
+    {% if can_see_private_tab %}Firemní{% else %}Všechna{% endif %}
+  </a>
   <a href="/kniha-jizd/vehicles?only=mine" class="kj-badge px-4 py-2 {% if only == 'mine' %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">Moje zodpovědnost</a>
+  {% if can_see_private_tab %}
+  <a href="/kniha-jizd/vehicles?scope=private" class="kj-badge px-4 py-2 {% if scope == 'private' %}bg-ink text-white{% else %}bg-white text-subtle border border-border2{% endif %}">Soukromá</a>
+  {% endif %}
 </div>
 
 {% if not rows %}
 <div class="kj-card text-center text-muted2">
-  {% if only == "mine" %}Nejste odpovědnou osobou žádného vozidla.{% else %}Zatím není založeno žádné vozidlo.{% endif %}
+  {% if only == "mine" %}Nejste odpovědnou osobou žádného vozidla.
+  {% elif scope == "private" %}Žádný uživatel zatím nemá soukromé vozidlo.
+  {% else %}Zatím není založeno žádné firemní vozidlo.{% endif %}
 </div>
 {% endif %}
 
@@ -35,6 +48,7 @@
         </div>
         <div class="text-sm text-muted2 truncate">{{ row.vehicle.internal_code }} &middot; {{ row.vehicle.brand }} {{ row.vehicle.model }}</div>
         <div class="flex flex-wrap gap-1 mt-1">
+          {{ private_badge(row.vehicle) }}
           {{ visibility_badge(row.vehicle) }}
           {{ approval_badge(row.vehicle) }}
         </div>

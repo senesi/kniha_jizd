@@ -41,6 +41,7 @@ async def render_page(request: Request, name: str, user, db: AsyncSession, *, st
         "can_create_vehicles": "fleet.vehicle.create" in codes,
         "can_view_logbook": "fleet.logbook.view" in codes,
         "can_manage_settings": "fleet.settings.manage" in codes,
+        "can_view_audit": "core.audit.view" in codes,
         "unread_notifications": await notifications_repository.count_unread(db, user.id),
         # Schvalovatel potřebuje v navigaci vidět, že na něj něco čeká
         # (požadavek B) - jinak by žádosti ležely, dokud si na ně nevzpomene.

@@ -25,6 +25,9 @@
 
 ## 2. Stav rozpracovanosti
 
+> **Pozor:** tenhle soubor se rozešel se skutečností — tabulka níž tvrdí
+> u některých etap starý stav. Závazný přehled je v `CLAUDE.md`.
+
 Implementace jde po etapách podle `zadání_projektu.md`, kapitola 35.
 Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 
@@ -41,6 +44,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | **hotovo** |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
 | 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | Dockerfile hotový, **na VPS zatím nic nevzniklo** |
+| 11 | audit a aktivita, soukromá vozidla uživatelů | **hotovo** (nad rámec původních etap) |
 
 Datový model (`app/models/fleet.py`) je navržený pro všechny etapy
 najednou, aby pozdější etapy nepotřebovaly přestavbu schématu. Migrace
@@ -162,6 +166,25 @@ ani po načtení QR kódu.
   obcházení viditelnosti, a má ho i odpovědná osoba.
 
 Nová routa, která pracuje s vozidlem, musí projít jedním z těch dvou.
+
+## 7c. Firemní a soukromá vozidla
+
+Vozidlo má `vehicle_scope`: `company` (firemní) nebo `private` (soukromé
+vozidlo jednoho uživatele, s vyplněným `owner_user_id`). **Není to
+multi-tenancy** — jedna instalace = jedna organizace; další firma dostane
+vlastní deployment s vlastní databází.
+
+- Soukromé vozidlo vidí **jen vlastník a administrátor**; pro ostatní
+  neexistuje (404, ne 403).
+- Vlastník své soukromé vozidlo plně **spravuje**. Zajišťuje to
+  `can_manage_vehicle`, na kterou musí delegovat každá kontrola typu
+  „smí tohle vozidlo spravovat".
+- **Firemní pohledy berou výhradně `company`** — i vlastníkovi. Svoje
+  auta má uživatel pod „Moje vozidla" (`/vehicles/private`).
+- `visible_vehicles_condition(..., scope=...)` má výchozí hodnotu
+  `company`: kdo na parametr zapomene, dostane firemní pohled, ne únik.
+- Rezervace a schvalování soukromá vozidla odmítají
+  (`assert_company_vehicle`) — jsou to firemní procesy.
 
 ## 7b. Validace: kdy blokovat a kdy se zeptat
 

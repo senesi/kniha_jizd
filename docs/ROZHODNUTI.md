@@ -954,3 +954,105 @@ ta chyba, kterou tohle rozhodnutí odstraňuje.
 **Praktický důsledek.** Poštu jde nastavit až potom, co připomínky
 začaly vznikat; nic se nezahodí, při nejbližším běhu odejde všechno, co
 čeká.
+
+---
+
+## R44 — Jeden audit, ne dva: login události bydlí v téže tabulce
+
+**Rozhodnutí.** Technické události přihlášení (`login`, `login_failed`,
+`logout`) se zapisují do `core.audit_log` stejně jako změny dat, jen s
+`module="auth"` a vyplněným `result`.
+
+**Proč ne druhá tabulka.** Administrátor se ptá „co se dělo", ne „co se
+dělo v tabulce A a co v tabulce B". Jedna tabulka znamená jednu
+obrazovku, jeden filtr a jedno místo, kam se chodí dívat. Odlišit obojí
+jde modulem — což stačí i na to, aby login události jednou dostaly
+kratší retenci než business audit.
+
+**Co audit dostal navíc.** `vehicle_id` jako vlastní sloupec (dřív se
+vozidlo schovávalo uvnitř JSON payloadu a nedalo se podle něj
+filtrovat), `description` pro lidsky čitelný popis a `result`.
+
+**Vozidlo se doplní samo.** Když ho volající nepředá, vezme se z
+`entity_id` (u auditu vozidla) nebo z payloadu, kde ho většina modulů
+uváděla dávno předtím. Bez toho by bylo potřeba obejít přes dvacet
+volajících a na některý zapomenout.
+
+**Audit nejde vypnout.** Žádný přepínač neexistuje a nemá vzniknout.
+
+---
+
+## R45 — Tajemství se z auditu vyhazují centrálně, ne opatrností volajících
+
+**Rozhodnutí.** `audit.scrub()` nahradí hodnoty u klíčů jako `password`,
+`smtp_password`, `session_token` nebo `csrf_token` textem
+`[odstraněno]`, a to rekurzivně, u každého zápisu.
+
+**Proč centrálně.** Volajících je přes čtyřicet a budou přibývat. Heslo
+zapsané do auditu se zpětně neodstraní — je v zálohách. Spoléhat na to,
+že si každý autor dá pozor, znamená čekat, až si jednou nedá.
+
+**Nahradit, ne smazat.** Ze záznamu má být poznat, že se to pole měnilo.
+
+**Audit je read-only i konstrukčně.** Modul auditu nemá jedinou POST
+routu ani funkci, která by řádek měnila či mazala — test to hlídá jak
+na routách, tak na názvech funkcí v repository.
+
+---
+
+## R46 — Soukromé vozidlo je druhý rozsah téhož modelu, ne druhý model
+
+**Rozhodnutí.** `Vehicle` dostal `vehicle_scope` (`company` | `private`)
+a `owner_user_id`. Žádný paralelní model, žádný druhý modul jízd, výdajů
+ani servisu.
+
+**Není to multi-tenancy.** Jedna instalace = jedna organizace. Soukromé
+vozidlo je vozidlo, které patří jednomu člověku uvnitř téže instalace.
+Další firma nebo rodina dostane vlastní deployment s vlastní databází,
+ne `tenant_id`.
+
+**Celá logika je ve třech funkcích.** Viditelnost už dřív tekla přes
+`can_view_vehicle` a `visible_vehicles_condition`, správa přes
+`can_manage_vehicle` — deset modulů je jen volá. Rozšíření o soukromá
+vozidla se proto obešlo bez zásahu do těch modulů; to je celý důvod,
+proč tam ty funkce jsou.
+
+**`visible_vehicles_condition` má výchozí rozsah `company`.** Kdo na
+parametr zapomene, dostane firemní pohled — ne únik soukromých vozidel.
+Fail-safe směrem k méně dat.
+
+**Funkce nově vrací podmínku i administrátorovi.** Dřív vracela `None`
+(„vidí všechno"), což by u rozsahu znamenalo, že se neuplatní.
+
+**Čtyři kopie téže úvahy se sjednotily.** `can_manage_documents`,
+`can_manage_defect` a kontrola u výdajů si „správce vozidla" počítaly
+po svém a vlastník soukromého auta si k němu nemohl nahrát ani
+technický průkaz. Teď všechny delegují na `can_manage_vehicle`.
+Výjimkou zůstává schvalování: to je firemní proces a u soukromého
+vozidla nevznikne.
+
+---
+
+## R47 — Soukromá vozidla se do firemních pohledů nedostanou vůbec
+
+**Rozhodnutí.** Seznam vozidel, kalendář rezervací, kniha jízd, exporty
+i přehled berou výhradně `company` — **i vlastníkovi**. Svoje soukromá
+vozidla najde pod „Moje vozidla".
+
+**Proč i vlastníkovi.** Firemní kniha jízd je podklad pro firmu. Kdyby
+se do ní míchaly soukromé cesty jejího vlastníka jen proto, že používá
+tentýž dashboard, přestala by být tím, čím je.
+
+**Rezervace a schvalování soukromá vozidla odmítají**
+(`assert_company_vehicle`), a to **404, ne 400**: výběr je vůbec
+nenabízí, takže požadavek na ně může přijít jen ručně sestaveným POSTem.
+
+**Cizí soukromé vozidlo = 404, ne 403** — stejně jako u skrytých
+vozidel. „Existuje, ale nemáš na něj právo" je taky únik.
+
+**Rozsah se úpravou nemění.** Kdyby šel přepnout ve formuláři, dalo by
+se z firemního auta udělat soukromé i s celou historií jízd. Když to
+někdy bude potřeba, je to administrativní zásah, ne políčko.
+
+**Vlastník se u zakládání přepíše na přihlášeného**, pokud zakládající
+není administrátor — podstrčené cizí id tak nemá žádný účinek.

@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import flash, previews
-from app.core.access import MANAGE_ANY, MANAGE_OWN, assert_vehicle_visible
+from app.core.access import MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE, assert_vehicle_visible
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, get_user_permission_codes, require_any_permission
@@ -86,7 +86,7 @@ async def document_upload(
     valid_to: str = Form(""),
     note: str = Form(""),
     document: UploadFile = File(...),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)
@@ -180,7 +180,7 @@ async def document_preview(
 @documents_router.post("/documents/{document_id}/delete", dependencies=[Depends(verify_csrf)])
 async def document_delete(
     document_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)

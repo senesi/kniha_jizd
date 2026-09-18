@@ -11,6 +11,9 @@ from app.models.fleet import Attachment, Vehicle, VehicleAssignment
 def _vehicle_load_options():
     return (
         selectinload(Vehicle.responsible_user),
+        # Seznam soukromých vozidel vypisuje jméno vlastníka, takže musí
+        # jít s sebou - jinak se dotahuje až při renderu (R21).
+        selectinload(Vehicle.owner),
         selectinload(Vehicle.photos),
     )
 
@@ -19,8 +22,11 @@ async def list_vehicles(
     db: AsyncSession, *, active_only: bool = False, visible_to=None,
 ) -> list[Vehicle]:
     """`visible_to` je podmínka z app/core/access.py:visible_vehicles_condition.
-    None znamená „uživatel vidí všechno" - ne „nefiltrovat, protože jsme
-    zapomněli". Každé volání ji má předat (požadavek D)."""
+
+    Od Etapy 11 ta funkce vrací podmínku vždycky (i administrátorovi),
+    protože nese i rozsah firemní/soukromé. `None` tedy znamená výhradně
+    „volající filtrovat nechce" a používá se jen tam, kde se rozsah řeší
+    jinak. Každý výpis ji má předat (požadavek D)."""
     stmt = select(Vehicle).where(Vehicle.deleted_at.is_(None))
     if active_only:
         stmt = stmt.where(Vehicle.is_active.is_(True))
@@ -98,4 +104,22 @@ async def list_attachments(
     if kind is not None:
         stmt = stmt.where(Attachment.kind == kind)
     result = await db.execute(stmt.order_by(Attachment.created_at))
+    return list(result.scalars().all())
+
+
+async def list_private_vehicles(db: AsyncSession, owner_id: uuid.UUID) -> list[Vehicle]:
+    """Soukromá vozidla jednoho člověka - sekce „Moje vozidla".
+
+    Vlastník se porovnává v dotazu, ne až v šabloně: jinak by stačilo
+    podstrčit cizí id a seznam by ho vypsal."""
+    result = await db.execute(
+        select(Vehicle)
+        .where(
+            Vehicle.deleted_at.is_(None),
+            Vehicle.vehicle_scope == "private",
+            Vehicle.owner_user_id == owner_id,
+        )
+        .options(*_vehicle_load_options())
+        .order_by(Vehicle.internal_code)
+    )
     return list(result.scalars().all())

@@ -4,6 +4,7 @@
 {% set _nav_items = [
   ("/kniha-jizd/", "Přehled", true, none),
   ("/kniha-jizd/vehicles", "Vozidla", true, none),
+  ("/kniha-jizd/vehicles/private", "Moje vozidla", true, none),
   ("/kniha-jizd/scan", "Načíst QR", true, none),
   ("/kniha-jizd/reservations", "Kalendář", true, none),
   ("/kniha-jizd/logbook", "Kniha jízd", can_view_logbook, none),
@@ -14,6 +15,7 @@
   ("/kniha-jizd/approvals/mine", "Moje žádosti", true, none),
   ("/kniha-jizd/notifications", "Upozornění", true, unread_notifications),
   ("/kniha-jizd/users", "Uživatelé", can_manage_users, none),
+  ("/kniha-jizd/admin/audit", "Audit a aktivita", can_view_audit, none),
   ("/kniha-jizd/settings", "Nastavení", can_manage_settings, none),
 ] %}
 <!doctype html>

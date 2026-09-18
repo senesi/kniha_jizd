@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import log_action
-from app.core.access import MANAGE_ANY, MANAGE_OWN
+from app.core.access import can_manage_vehicle, MANAGE_ANY, MANAGE_OWN
 from app.models.core import User
 from app.models.fleet import TripRequest, Vehicle
 from app.modules.approvals import repository
@@ -47,6 +47,9 @@ def needs_approval(vehicle: Vehicle, actor: User, codes: set[str]) -> bool:
 
 
 def can_decide(vehicle: Vehicle, actor: User, codes: set[str]) -> bool:
+    """Schvalování je firemní proces, takže se tu schválně NEptáme
+    `can_manage_vehicle`: vlastník soukromého vozidla nemá co schvalovat
+    (žádost u soukromého auta nevznikne, viz assert_company_vehicle)."""
     if MANAGE_ANY in codes or "fleet.trip.manage" in codes:
         return True
     return MANAGE_OWN in codes and vehicle.responsible_user_id == actor.id

@@ -17,6 +17,9 @@ from app.core import app_settings, flash
 from app.core.access import (
     MANAGE_ANY,
     MANAGE_OWN,
+    MANAGE_PRIVATE,
+    SCOPE_COMPANY,
+    SCOPE_PRIVATE,
     assert_vehicle_manage_access,
     assert_vehicle_visible,
     can_manage_vehicle,
@@ -111,6 +114,8 @@ async def _form_payload(request: Request) -> dict:
         "tank_capacity_l": _to_float(get("tank_capacity_l")),
         "battery_capacity_kwh": _to_float(get("battery_capacity_kwh")),
         "responsible_user_id": _to_uuid(get("responsible_user_id")),
+        "vehicle_scope": get("vehicle_scope") or "company",
+        "owner_user_id": _to_uuid(get("owner_user_id")),
         "status": get("status") or "available",
         "is_active": get("is_active") is not None,
         "approval_required": get("approval_required") is not None,
@@ -134,27 +139,19 @@ async def _form_context(db: AsyncSession, **extra) -> dict:
         "vehicle_types": VEHICLE_TYPES,
         "fuel_types": FUEL_TYPES,
         "vehicle_statuses": VEHICLE_STATUSES,
+        # Výchozí "ne": formulář sám od sebe nenabídne přepnutí rozsahu
+        # ani výběr vlastníka, dokud to routa výslovně nepovolí.
+        "can_choose_scope": False,
+        "can_assign_owner": False,
         **extra,
     }
 
 
 # --- seznam ----------------------------------------------------------
 
-@vehicles_router.get("/vehicles")
-async def vehicles_list(
-    request: Request,
-    only: str = "",
-    user: User = Depends(require_permission(VIEW)),
-    db: AsyncSession = Depends(get_db),
-):
-    codes = await get_user_permission_codes(db, user.id)
+async def _vehicle_rows(db: AsyncSession, vehicles) -> list[dict]:
     thresholds = await app_settings.get_all(db)
-    vehicles = (
-        await repository.list_vehicles_for_responsible_user(db, user.id)
-        if only == "mine"
-        else await repository.list_vehicles(db, visible_to=visible_vehicles_condition(codes, user))
-    )
-    rows = [
+    return [
         {
             "vehicle": vehicle,
             "deadlines": vehicle_deadlines(vehicle, thresholds),
@@ -162,9 +159,59 @@ async def vehicles_list(
         }
         for vehicle in vehicles
     ]
+
+
+@vehicles_router.get("/vehicles")
+async def vehicles_list(
+    request: Request,
+    only: str = "",
+    scope: str = SCOPE_COMPANY,
+    user: User = Depends(require_permission(VIEW)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Seznam vozidel. Výchozí pohled je **firemní**.
+
+    Soukromá vozidla se sem míchat nesmí (požadavek B3) - administrátor
+    je vidí pod vlastní záložkou, ostatní ve svojí sekci „Moje vozidla".
+    Neznámá hodnota `scope` spadne na firemní, ne na „všechno"."""
+    codes = await get_user_permission_codes(db, user.id)
+    scope = scope if scope in (SCOPE_COMPANY, SCOPE_PRIVATE) else SCOPE_COMPANY
+    # Cizí soukromá vozidla vidí jen administrátor; podmínka to řeší sama,
+    # takže záložka nikomu jinému nic navíc neukáže.
+    can_see_private_tab = MANAGE_ANY in codes
+
+    if only == "mine":
+        vehicles = await repository.list_vehicles_for_responsible_user(db, user.id)
+    else:
+        vehicles = await repository.list_vehicles(
+            db, visible_to=visible_vehicles_condition(codes, user, scope=scope),
+        )
+
     return await render_page(
         request, "vehicles_list.html", user, db,
-        rows=rows, only=only, can_create=CREATE in codes,
+        rows=await _vehicle_rows(db, vehicles), only=only, scope=scope,
+        can_create=CREATE in codes, can_see_private_tab=can_see_private_tab,
+        busy_vehicle_ids=await trips_repository.busy_vehicle_ids(db),
+    )
+
+
+# --- moje soukromá vozidla -------------------------------------------
+# Pozor na pořadí: musí být PŘED /vehicles/{vehicle_id}.
+
+@vehicles_router.get("/vehicles/private")
+async def my_private_vehicles(
+    request: Request,
+    user: User = Depends(require_permission(VIEW)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sekce „Moje vozidla" - soukromá vozidla přihlášeného.
+
+    Vlastník se bere z přihlášení, ne z parametru, takže cizí seznam
+    nejde vyžádat."""
+    vehicles = await repository.list_private_vehicles(db, user.id)
+    return await render_page(
+        request, "my_vehicles.html", user, db,
+        rows=await _vehicle_rows(db, vehicles),
         busy_vehicle_ids=await trips_repository.busy_vehicle_ids(db),
     )
 
@@ -173,25 +220,65 @@ async def vehicles_list(
 # Pozor na pořadí: /vehicles/new musí být registrované PŘED
 # /vehicles/{vehicle_id}, jinak se "new" zkusí přečíst jako UUID.
 
+def _assert_may_create(codes: set[str], payload: dict, user: User) -> dict:
+    """Kdo smí zakládat co.
+
+    Firemní vozidlo zakládá jen `fleet.vehicle.create` (administrátor).
+    Soukromé smí každý, kdo má `fleet.vehicle.private` - ale **jen sobě**:
+    vlastník se přepíše na přihlášeného, takže cizí id ve formuláři nemá
+    žádný účinek. Administrátor smí vlastníka určit."""
+    scope = payload.get("vehicle_scope") or SCOPE_COMPANY
+
+    if scope == SCOPE_PRIVATE:
+        if MANAGE_PRIVATE not in codes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nemáš oprávnění zakládat soukromá vozidla.",
+            )
+        if MANAGE_ANY not in codes or not payload.get("owner_user_id"):
+            payload["owner_user_id"] = user.id
+        return payload
+
+    if CREATE not in codes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nemáš oprávnění zakládat firemní vozidla.",
+        )
+    return payload
+
+
 @vehicles_router.get("/vehicles/new")
 async def vehicle_new_form(
     request: Request,
-    user: User = Depends(require_permission(CREATE)),
+    scope: str = SCOPE_COMPANY,
+    user: User = Depends(require_any_permission(CREATE, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
+    codes = await get_user_permission_codes(db, user.id)
+    # Kdo nesmí zakládat firemní vozidlo, dostane rovnou formulář na
+    # soukromé - jiný pro něj stejně nedává smysl.
+    scope = scope if scope in (SCOPE_COMPANY, SCOPE_PRIVATE) else SCOPE_COMPANY
+    if CREATE not in codes:
+        scope = SCOPE_PRIVATE
+
     return await render_page(
         request, "vehicle_form.html", user, db,
-        **await _form_context(db, vehicle=None, error=None, form={}),
+        **await _form_context(
+            db, vehicle=None, error=None, form={"vehicle_scope": scope},
+            can_choose_scope=CREATE in codes and MANAGE_PRIVATE in codes,
+            can_assign_owner=MANAGE_ANY in codes,
+        ),
     )
 
 
 @vehicles_router.post("/vehicles/new", dependencies=[Depends(verify_csrf)])
 async def vehicle_create(
     request: Request,
-    user: User = Depends(require_permission(CREATE)),
+    user: User = Depends(require_any_permission(CREATE, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _form_payload(request)
+    codes = await get_user_permission_codes(db, user.id)
+    payload = _assert_may_create(codes, await _form_payload(request), user)
     form = await request.form()
     payload["current_odometer_km"] = _to_int(str(form.get("current_odometer_km") or "")) or 0
     payload["current_fuel_level"] = _to_int(str(form.get("current_fuel_level") or ""))
@@ -260,14 +347,23 @@ async def vehicle_detail(
 async def vehicle_edit_form(
     request: Request,
     vehicle_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
-    vehicle = await _load_vehicle(db, vehicle_id)
-    assert_vehicle_manage_access(await get_user_permission_codes(db, user.id), vehicle, user)
+    codes = await get_user_permission_codes(db, user.id)
+    vehicle = await _load_vehicle(db, vehicle_id, user=user, codes=codes)
+    assert_vehicle_manage_access(codes, vehicle, user)
     return await render_page(
         request, "vehicle_form.html", user, db,
-        **await _form_context(db, vehicle=vehicle, error=None, form={}),
+        **await _form_context(
+            db, vehicle=vehicle, error=None, form={},
+            # Rozsah existujícího vozidla se přes formulář nepřepíná -
+            # z firemního auta by se tím dalo udělat soukromé i s celou
+            # historií jízd. Když bude potřeba, je to administrativní
+            # zásah, ne políčko ve formuláři.
+            can_choose_scope=False,
+            can_assign_owner=MANAGE_ANY in codes and vehicle.is_private,
+        ),
     )
 
 
@@ -275,12 +371,21 @@ async def vehicle_edit_form(
 async def vehicle_update(
     request: Request,
     vehicle_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
-    vehicle = await _load_vehicle(db, vehicle_id)
-    assert_vehicle_manage_access(await get_user_permission_codes(db, user.id), vehicle, user)
+    codes = await get_user_permission_codes(db, user.id)
+    vehicle = await _load_vehicle(db, vehicle_id, user=user, codes=codes)
+    assert_vehicle_manage_access(codes, vehicle, user)
     payload = await _form_payload(request)
+    # Rozsah ani vlastník se úpravou nemění - drží se to, co je uložené.
+    # Jinak by stačilo podstrčit vehicle_scope=company a soukromé vozidlo
+    # by se přesypalo do firemních přehledů.
+    payload["vehicle_scope"] = vehicle.vehicle_scope
+    payload["owner_user_id"] = (
+        _to_uuid(str(payload.get("owner_user_id") or "")) if MANAGE_ANY in codes and vehicle.is_private
+        else vehicle.owner_user_id
+    ) or vehicle.owner_user_id
     try:
         data = VehicleUpdate(**payload)
         await service.update_vehicle(db, vehicle, data, user.id)
@@ -313,7 +418,7 @@ async def vehicle_correct_odometer(
     vehicle_id: uuid.UUID,
     new_km: int = Form(...),
     reason: str = Form(...),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     vehicle = await _load_vehicle(db, vehicle_id)
@@ -338,7 +443,7 @@ def _qr_url(request: Request, vehicle: Vehicle) -> str:
 async def vehicle_qr_print(
     request: Request,
     vehicle_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     vehicle = await _load_vehicle(db, vehicle_id)
@@ -352,7 +457,7 @@ async def vehicle_qr_print(
 async def vehicle_qr_png(
     request: Request,
     vehicle_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     vehicle = await _load_vehicle(db, vehicle_id)
@@ -399,7 +504,7 @@ async def vehicle_add_photo(
     request: Request,
     vehicle_id: uuid.UUID,
     photo: UploadFile = File(...),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     vehicle = await _load_vehicle(db, vehicle_id)
@@ -418,7 +523,7 @@ async def vehicle_add_photo(
 async def vehicle_delete_photo(
     vehicle_id: uuid.UUID,
     attachment_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     vehicle = await _load_vehicle(db, vehicle_id)

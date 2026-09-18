@@ -85,17 +85,39 @@ class AuditLog(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(f"{SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
     )
-    action: Mapped[str] = mapped_column(String(50), nullable=False)  # create/update/delete/login/...
-    module: Mapped[str] = mapped_column(String(50), nullable=False)
+    action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    module: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Vozidlo, kterého se akce týká. Vlastní sloupec, ne jen klíč uvnitř
+    # payloadu - jinak by se podle něj nedalo filtrovat. SET NULL, protože
+    # smazané vozidlo nesmí odnést historii toho, co se s ním dělo.
+    vehicle_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fleet.vehicles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     before_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: Stručný popis změny lidsky, vedle strojového JSONu.
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: "success" / "failure". Dává smysl hlavně u přihlášení - neúspěšná
+    #: změna se neuloží, takže u ní zůstává prázdný.
+    result: Mapped[str | None] = mapped_column(String(20), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
 
     user: Mapped["User | None"] = relationship()
+
+    @property
+    def is_login_event(self) -> bool:
+        """Technická událost přihlášení, ne změna dat.
+
+        Obě žijí v jedné tabulce schválně - jeden audit, jedno místo, kam
+        se chodí dívat. Odlišují se modulem, takže se dají filtrovat i
+        případně čistit jinou retencí."""
+        return self.module == "auth"
 
 
 class AppSetting(Base):

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import deadline_row, status_badge %}
-{% from "_vehicle.html" import thumb, visibility_badge, approval_badge, defect_priority, defect_status, wheel_badge %}
+{% from "_vehicle.html" import thumb, visibility_badge, approval_badge, defect_priority, defect_status, wheel_badge, private_badge %}
 {% block title %}{{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
 
 {% block content %}
@@ -17,6 +17,7 @@
       </div>
       <p class="text-muted2">{{ vehicle.internal_code }} &middot; {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.year_of_manufacture %} ({{ vehicle.year_of_manufacture }}){% endif %}</p>
       <div class="flex flex-wrap gap-1 mt-1">
+        {{ private_badge(vehicle) }}
         {{ visibility_badge(vehicle) }}
         {{ approval_badge(vehicle) }}
       </div>

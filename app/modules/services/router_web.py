@@ -9,6 +9,7 @@ from app.core import app_settings, flash
 from app.core.access import (
     MANAGE_ANY,
     MANAGE_OWN,
+    MANAGE_PRIVATE,
     assert_vehicle_manage_access,
     assert_vehicle_visible,
     can_manage_vehicle,
@@ -112,7 +113,7 @@ async def vehicle_services(
 async def service_new_form(
     request: Request,
     vehicle_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)
@@ -136,7 +137,7 @@ async def service_create(
     request: Request,
     vehicle_id: uuid.UUID,
     invoice: UploadFile | None = File(None),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     codes = await get_user_permission_codes(db, user.id)
@@ -195,7 +196,7 @@ async def service_create(
 async def service_add_attachment(
     service_id: uuid.UUID,
     photo: UploadFile = File(...),
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Příloha k servisnímu úkonu - fotografie i PDF.
@@ -225,7 +226,7 @@ async def service_add_attachment(
 @services_router.post("/services/{service_id}/delete", dependencies=[Depends(verify_csrf)])
 async def service_delete(
     service_id: uuid.UUID,
-    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN)),
+    user: User = Depends(require_any_permission(MANAGE_ANY, MANAGE_OWN, MANAGE_PRIVATE)),
     db: AsyncSession = Depends(get_db),
 ):
     record = await repository.get(db, service_id)

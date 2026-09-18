@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import dot, status_badge %}
+{% from "_vehicle.html" import thumb %}
+{% block title %}Moje vozidla &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between gap-3 mb-2">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">Moje vozidla</h1>
+    <p class="text-sm text-muted2">Vaše soukromá vozidla. Nikdo jiný je nevidí.</p>
+  </div>
+</div>
+
+{# Přidání je hlavní akce téhle stránky, tak ať je na mobilu palcem
+   dosažitelná hned, ne až pod seznamem. #}
+<a href="/kniha-jizd/vehicles/new?scope=private" class="kj-btn w-full sm:w-auto inline-block text-center mb-5">
+  + Přidat soukromé vozidlo
+</a>
+
+{% if not rows %}
+<div class="kj-card text-center text-muted2">
+  Zatím nemáte žádné soukromé vozidlo.
+  <p class="text-xs mt-2">
+    Soukromé vozidlo se nezobrazuje mezi firemními, nevstupuje do firemní knihy jízd
+    ani do rezervací – slouží jen vám.
+  </p>
+</div>
+{% endif %}
+
+<div class="grid gap-3">
+  {% for row in rows %}
+  <a href="/kniha-jizd/vehicles/{{ row.vehicle.id }}" class="kj-card block active:bg-surface">
+    <div class="flex items-start gap-3">
+      {{ thumb(row.vehicle, "md") }}
+      <div class="min-w-0 grow">
+        <div class="flex items-center gap-2">
+          {{ dot(row.worst) }}
+          <span class="font-extrabold truncate">{{ row.vehicle.license_plate }}</span>
+        </div>
+        <div class="text-sm text-muted2 truncate">
+          {{ row.vehicle.brand }} {{ row.vehicle.model }}
+        </div>
+        <div class="flex flex-wrap items-center gap-2 mt-2">
+          {{ status_badge(row.vehicle, row.vehicle.id in busy_vehicle_ids) }}
+          <span class="text-xs text-muted2">{{ row.vehicle.current_odometer_km | km }} km</span>
+        </div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

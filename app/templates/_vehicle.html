@@ -38,6 +38,16 @@
   {% endif %}
 {% endmacro %}
 
+{# Soukromé vozidlo musí být poznat na první pohled - hlavně v
+   administraci, kde je admin vidí vedle firemních. #}
+{% macro private_badge(vehicle, with_owner=true) %}
+  {% if vehicle.vehicle_scope == "private" %}
+  <span class="kj-badge bg-accent/10 text-accent" title="Soukromé vozidlo uživatele">
+    Soukromé{% if with_owner and vehicle.owner %} &middot; {{ vehicle.owner.full_name }}{% endif %}
+  </span>
+  {% endif %}
+{% endmacro %}
+
 {% macro approval_badge(vehicle) %}
   {% if vehicle.approval_required %}
   <span class="kj-badge bg-info/15 text-info" title="Výpůjčku musí schválit odpovědná osoba">Na schválení</span>

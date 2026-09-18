@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import get_settings
 from app.core.templates import templates
 from app.modules.approvals.router_web import approvals_router, vehicle_approvals_router
+from app.modules.audit.router_web import router as audit_router
 from app.modules.auth.router_web import router as auth_web_router
 from app.modules.defects.router_web import defects_router, vehicle_defects_router
 from app.modules.documents.router_web import documents_router, vehicle_documents_router
@@ -108,6 +109,7 @@ app.include_router(vehicle_expenses_router, prefix="/kniha-jizd")
 app.include_router(expenses_router, prefix="/kniha-jizd")
 app.include_router(logbook_router, prefix="/kniha-jizd")
 app.include_router(notifications_router, prefix="/kniha-jizd")
+app.include_router(audit_router, prefix="/kniha-jizd")
 app.include_router(settings_router, prefix="/kniha-jizd")
 app.include_router(users_router, prefix="/kniha-jizd")
 app.include_router(account_router, prefix="/kniha-jizd")
