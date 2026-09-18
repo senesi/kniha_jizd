@@ -414,11 +414,23 @@ async def test_deadline_respects_each_recipients_choice(
     await _set_pref(admin.id, "vehicle_deadlines", True)
 
 
-async def test_deadline_is_not_sent_twice(logged_in_client, csrf_token, responsible_user):
-    """Denní běh nesmí posílat totéž pořád dokola."""
+async def test_delivered_deadline_is_not_sent_twice(
+    logged_in_client, csrf_token, responsible_user, monkeypatch,
+):
+    """Denní běh nesmí posílat dokola to, co už dorazilo.
+
+    Odesílání se tu podstrkuje schválně: rozhoduje **doručení**, ne
+    existence řádku, takže bez fungující pošty by se druhý běh správně
+    pokusil znovu (viz test_notification_delivery.py)."""
+    from app.core import mailer
     from app.core.db import async_session_factory
     from app.models.fleet import Vehicle
     from app.modules.notifications import service as notifications
+
+    async def delivered(config, to_email, subject, body):
+        return None
+
+    monkeypatch.setattr(mailer, "send_mail", delivered)
 
     owner = await _user_by_email(responsible_user[0])
     vehicle_id = await create_vehicle(
@@ -435,7 +447,8 @@ async def test_deadline_is_not_sent_twice(logged_in_client, csrf_token, responsi
         second = await notifications.notify_vehicle_deadline(db, vehicle=vehicle, deadline=deadline)
 
     assert first, "první běh musí něco poslat"
-    assert second == [], "druhý běh už nic"
+    assert all(n.email_status == "sent" for n in first)
+    assert second == [], "doručené se neopakuje"
 
     # Posunutý termín ale připomínku pustí znovu.
     moved = DeadlineStatus(

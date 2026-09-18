@@ -22,6 +22,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.notifications import repository
@@ -59,24 +60,50 @@ async def create(
         # si člověk vypnul, by z "vypnuto" udělalo "jen bez e-mailu".
         return None
 
-    if dedupe_key is not None and await repository.dedupe_key_exists(db, user.id, dedupe_key):
-        # Připomínka termínu chodí opakovaně, dokud se termín neposune -
-        # ale poslat ji smí jen jednou.
-        return None
+    notification = None
+    if dedupe_key is not None:
+        notification, busy = await repository.claim_for_delivery(db, user.id, dedupe_key)
+        if busy:
+            # Tutéž zprávu právě vyřizuje jiný souběžný běh.
+            return None
+        if notification is not None and notification.emailed_at is not None:
+            # Doručeno dřív - tohle je ta jediná situace, kdy se
+            # neopakuje. Neúspěšný pokus se zkusit smí (R43).
+            return None
 
-    notification = Notification(
-        user_id=user.id, vehicle_id=vehicle.id if vehicle else None, kind=kind, title=title, body=body,
-        link_url=link_url, dedupe_key=dedupe_key,
-    )
-    db.add(notification)
-    await db.flush()
+    if notification is None:
+        notification = Notification(
+            user_id=user.id, vehicle_id=vehicle.id if vehicle else None, kind=kind, title=title,
+            body=body, link_url=link_url, dedupe_key=dedupe_key,
+        )
+        try:
+            # Savepoint, ne prostý insert: při souběhu zakládání prohraje
+            # jeden z běhů na unikátním indexu a nesmí tím shodit celou
+            # transakci ani session (stejný důvod jako R15).
+            #
+            # `db.add` patří DOVNITŘ savepointu. Kdyby byl venku, zůstal
+            # by objekt po rollbacku mezi rozepsanými a příští autoflush
+            # by tentýž INSERT zkusil znovu - session by se tím otrávila.
+            async with db.begin_nested():
+                db.add(notification)
+                await db.flush()
+        except IntegrityError:
+            # Souběžný běh nás předběhl; práci dokončí on.
+            return None
 
+    # Odeslání až teď a jeho výsledek rozhoduje o tom, jestli je hotovo.
     smtp = await app_settings.get_smtp(db)
+    notification.email_attempts = (notification.email_attempts or 0) + 1
     error = await mailer.send_mail(smtp, user.email, title, _mail_body(body, link_url))
     if error is None:
         notification.emailed_at = datetime.now(timezone.utc)
+        notification.email_error = None
     else:
         notification.email_error = error
+        logger.warning(
+            "Notifikace %s pro %s se neodeslala (pokus %s): %s",
+            notification.id, user.email, notification.email_attempts, error,
+        )
     await db.flush()
     if commit:
         await db.commit()
@@ -388,19 +415,23 @@ async def notify_vehicle_deadline(
 
     `dedupe_key` obsahuje kód termínu i jeho datum, takže:
 
-    - denní běh připomínek nerozešle totéž podruhé,
+    - připomínka, která **doopravdy dorazila**, se už neposílá znovu,
     - jakmile se termín posune (nová STK), klíč se změní a příští
       připomínka projde.
 
-    Bez toho by buď chodil e-mail každý den, nebo by se po prodloužení
-    termínu už nikdy neozval."""
+    Neúspěšné odeslání hotovo není: řádek zůstane s prázdným
+    `emailed_at` a zítřejší běh to zkusí znovu (R43).
+
+    Vrací notifikace, se kterými se v tomhle běhu něco dělo - tedy nově
+    založené i ty, u kterých se opakovalo odesílání. Jestli e-mail
+    opravdu odešel, říká `notification.email_status`."""
     if not deadline.is_actionable:
         return []
 
     due = deadline.due_date.isoformat() if deadline.due_date else "bez-data"
     dedupe_key = f"deadline:{vehicle.id}:{deadline.code}:{due}:{deadline.level}"
 
-    sent = []
+    handled = []
     for recipient in await deadline_recipients(db, vehicle):
         notification = await create(
             db, user=recipient, vehicle=vehicle, kind="deadline",
@@ -410,7 +441,7 @@ async def notify_vehicle_deadline(
             dedupe_key=dedupe_key, commit=False,
         )
         if notification is not None:
-            sent.append(notification)
+            handled.append(notification)
     if commit:
         await db.commit()
-    return sent
+    return handled

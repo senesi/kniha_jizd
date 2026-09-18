@@ -923,7 +923,17 @@ class Notification(Base):
     outage must not break a trip or a reservation."""
 
     __tablename__ = "notifications"
-    __table_args__ = {"schema": SCHEMA}
+    __table_args__ = (
+        # Dva souběžné běhy plánovače nesmí založit dvě stejné zprávy.
+        # Kontrola v aplikaci by mezi dotazem a zápisem měla okno, kterým
+        # oba projdou; index ho nemá. Jen pro řádky s klíčem - běžné
+        # notifikace se opakovat smí.
+        Index(
+            "uq_fleet_notifications_dedupe", "user_id", "dedupe_key",
+            unique=True, postgresql_where=text("dedupe_key IS NOT NULL"),
+        ),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -937,12 +947,29 @@ class Notification(Base):
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     link_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Deduplication key for the recurring deadline reminders (STK/vignette/
-    # oil/service) - "this vehicle, this kind, this threshold" is sent once,
-    # not on every run of the reminder job.
+    # oil/service). Klíč sám o sobě NEZNAMENÁ „už odesláno" - o tom
+    # rozhoduje emailed_at. Dokud je prázdné, smí se odeslání při dalším
+    # běhu zopakovat (ROZHODNUTI.md R43).
     dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     email_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Kolikrát se odeslání zkusilo. Diagnostika, ne strop - zkouší se
+    #: dál, dokud nedorazí.
+    email_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     vehicle: Mapped["Vehicle | None"] = relationship()
+
+    @property
+    def email_status(self) -> str:
+        """`sent` | `failed` | `pending`.
+
+        Odvozuje se, neukládá: stav e-mailu už plně popisují `emailed_at`
+        a `email_error` a třetí sloupec s toutéž informací by se dřív
+        nebo později rozešel (stejná úvaha jako R4 a R28)."""
+        if self.emailed_at is not None:
+            return "sent"
+        if self.email_error:
+            return "failed"
+        return "pending"

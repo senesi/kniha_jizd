@@ -9,9 +9,15 @@ opakované spouštění je práce systému, ne aplikace, a takhle jde běh
 kdykoliv ručně zopakovat nebo si ho nanečisto prohlédnout.
 
 **Opakované spuštění nevadí.** Každá připomínka nese `dedupe_key`
-složený z vozidla, termínu, jeho data a stupně naléhavosti, takže druhý
-běh téhož dne nikomu nepošle nic navíc. Jakmile se termín posune nebo
-zežloutne na červenou, klíč se změní a připomínka projde znovu.
+složený z vozidla, termínu, jeho data a stupně naléhavosti, takže znovu
+se neposílá to, co už **doopravdy dorazilo**. Jakmile se termín posune
+nebo zežloutne na červenou, klíč se změní a připomínka projde znovu.
+
+**Co se neodeslalo, se zítra zkusí znovu.** Neúspěšný pokus (vypnuté
+SMTP, nedostupný server) se nepovažuje za vyřízený - řádek zůstane s
+prázdným `emailed_at` a další běh odeslání zopakuje (ROZHODNUTI.md R43).
+Proto je bezpečné nastavit poštu až potom, co připomínky začaly chodit:
+nic se nezahodí.
 
 Komu dorazí, rozhoduje individuální nastavení každého příjemce - viz
 app/modules/notifications/preferences.py.
@@ -47,10 +53,19 @@ async def run(*, dry_run: bool) -> int:
                           f" -> {len(recipients)} adresátů (bez ohledu na jejich nastavení)")
                     continue
 
-                sent = await notifications.notify_vehicle_deadline(db, vehicle=vehicle, deadline=deadline)
-                if sent:
-                    print(f"  {vehicle.license_plate:12} {deadline.label:24} -> odesláno {len(sent)}×")
-                sent_total += len(sent)
+                handled = await notifications.notify_vehicle_deadline(
+                    db, vehicle=vehicle, deadline=deadline,
+                )
+                delivered = [n for n in handled if n.email_status == "sent"]
+                failed = [n for n in handled if n.email_status == "failed"]
+                if handled:
+                    line = f"  {vehicle.license_plate:12} {deadline.label:24} -> doručeno {len(delivered)}"
+                    if failed:
+                        # Důvod patří do logu: bez něj se z „nedoručeno 3"
+                        # nedá poznat, jestli je špatně heslo, nebo server.
+                        line += f", NEDORUČENO {len(failed)} ({failed[0].email_error})"
+                    print(line)
+                sent_total += len(delivered)
 
     return sent_total
 
@@ -64,7 +79,7 @@ def main() -> None:
     print("Připomínky termínů" + (" (nanečisto)" if args.dry_run else ""))
     total = asyncio.run(run(dry_run=args.dry_run))
     if not args.dry_run:
-        print(f"Hotovo, odesláno celkem: {total}")
+        print(f"Hotovo, doručeno celkem: {total}")
 
 
 if __name__ == "__main__":

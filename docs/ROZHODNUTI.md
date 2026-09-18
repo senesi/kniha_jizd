@@ -908,3 +908,49 @@ nástroj na rozesílání pošty komukoliv.
 `SmtpConfig` místo sahání do `get_settings()`. Rozhodnutí, odkud se
 nastavení bere, tak zůstává na jednom místě a `mailer` je jen to, co
 pošle, co dostane.
+
+---
+
+## R43 — Odesláno je to, co dorazilo, ne to, co se zapsalo
+
+**Rozhodnutí.** O deduplikaci připomínek rozhoduje `emailed_at`, ne
+existence řádku s `dedupe_key`. Dokud je `emailed_at` prázdné, smí další
+běh odeslání zopakovat. Řádek se přitom nezakládá znovu — opakuje se
+doručení, ne zpráva.
+
+**Proč se to měnilo.** Původní logika považovala připomínku za vyřízenou
+ve chvíli, kdy vznikl řádek. Když v tu chvíli pošta nefungovala (a na
+produkci nebyla vůbec nastavená), e-mail nedorazil **nikdy** a nikdo se
+to nedozvěděl: další běh ji přeskočil jako „už posláno". Dedupe klíč má
+bránit opakování, ne ztrátě.
+
+**Stav se odvozuje, neukládá.** `email_status` je `sent` / `failed` /
+`pending` spočítané z `emailed_at` a `email_error`. Třetí sloupec s touž
+informací by se dřív nebo později rozešel — stejná úvaha jako u
+„vypůjčeného" vozidla (R4) a nasazené sady kol (R28).
+
+**Souběh hlídá databáze, ne aplikace**, ve dvou krocích, protože jsou to
+dva různé závody:
+
+- **zakládání** — částečný unikátní index na (`user_id`, `dedupe_key`)
+  pro řádky s klíčem. Dva souběžné běhy nemůžou založit dvě stejné
+  zprávy; poražený dostane `IntegrityError` v savepointu a práci
+  přenechá.
+- **opakování** — `SELECT … FOR UPDATE SKIP LOCKED`. Samotný index by
+  tady nepomohl: oba běhy by našly existující řádek s prázdným
+  `emailed_at` a oba poslali e-mail. Zámek drží po dobu odesílání ten,
+  kdo ho získal, a druhý běh místo čekání přeskočí — připomínku už
+  stejně někdo vyřizuje.
+
+**`db.add` patří dovnitř savepointu.** Kdyby byl venku, zůstal by objekt
+po rollbacku mezi rozepsanými a příští autoflush by tentýž INSERT zkusil
+znovu — session by se tím otrávila. (Na tohle jsem při psaní narazil.)
+
+**Bez stropu na počet pokusů.** Zkouší se dál, dokud nedorazí; je to
+jednou denně a `email_attempts` říká, jak dlouho se to nedaří. Strop by
+znamenal, že se připomínka po týdnu výpadku tiše vzdá — a to je přesně
+ta chyba, kterou tohle rozhodnutí odstraňuje.
+
+**Praktický důsledek.** Poštu jde nastavit až potom, co připomínky
+začaly vznikat; nic se nezahodí, při nejbližším běhu odejde všechno, co
+čeká.
