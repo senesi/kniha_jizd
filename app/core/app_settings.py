@@ -101,3 +101,139 @@ async def set_values(db: AsyncSession, values: dict[str, int], actor_id: uuid.UU
             row.value = str(value)
             row.updated_by = actor_id
             row.updated_at = datetime.now(timezone.utc)
+
+
+# ======================================================================
+# SMTP - nastavitelné administrátorem (dřív jen v .env)
+# ======================================================================
+#
+# Leží ve stejné tabulce jako prahy, jen pod vlastními klíči. `get_all`
+# i `set_values` cizí klíče ignorují, takže se obě skupiny nepletou a
+# nevzniklo druhé úložiště nastavení.
+#
+# **Hodnota z administrace má přednost, .env zůstává záložní.** Po poli,
+# ne po celé skupině: kdo vyplní jen server a přihlášení, nepřijde tím o
+# adresu odesílatele nastavenou v .env. Nevyplněné pole se tedy chová
+# jako „tohle neřeším", ne jako „smazat".
+
+SMTP_HOST_KEY = "smtp_host"
+SMTP_PORT_KEY = "smtp_port"
+SMTP_USER_KEY = "smtp_user"
+SMTP_PASSWORD_KEY = "smtp_password"
+SMTP_FROM_KEY = "smtp_from"
+SMTP_STARTTLS_KEY = "smtp_starttls"
+
+SMTP_KEYS = (
+    SMTP_HOST_KEY, SMTP_PORT_KEY, SMTP_USER_KEY,
+    SMTP_PASSWORD_KEY, SMTP_FROM_KEY, SMTP_STARTTLS_KEY,
+)
+
+
+@dataclass(frozen=True)
+class SmtpConfig:
+    host: str = ""
+    port: int = 587
+    user: str = ""
+    password: str = ""
+    sender: str = ""
+    starttls: bool = True
+    #: Odkud se vzaly hodnoty - pro nápovědu na obrazovce nastavení.
+    from_database: bool = False
+    #: True, když je v databázi heslo, které se nepodařilo rozšifrovat
+    #: (typicky po výměně SESSION_SECRET_KEY).
+    password_unreadable: bool = False
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.host)
+
+
+async def _raw_rows(db: AsyncSession, keys) -> dict[str, str]:
+    result = await db.execute(select(AppSetting).where(AppSetting.key.in_(list(keys))))
+    return {row.key: row.value for row in result.scalars().all()}
+
+
+async def get_smtp(db: AsyncSession) -> SmtpConfig:
+    """Nastavení pošty: co je v databázi, doplněné tím, co je v .env."""
+    from app.core.config import get_settings
+    from app.core.crypto import decrypt_secret
+
+    env = get_settings()
+    stored = await _raw_rows(db, SMTP_KEYS)
+
+    def text(key: str, fallback: str) -> str:
+        value = (stored.get(key) or "").strip()
+        return value or fallback
+
+    port_raw = (stored.get(SMTP_PORT_KEY) or "").strip()
+    try:
+        port = int(port_raw) if port_raw else env.smtp_port
+    except ValueError:
+        port = env.smtp_port
+
+    starttls_raw = (stored.get(SMTP_STARTTLS_KEY) or "").strip()
+    starttls = env.smtp_starttls if starttls_raw == "" else starttls_raw == "1"
+
+    password = env.smtp_password
+    unreadable = False
+    if (stored.get(SMTP_PASSWORD_KEY) or "").strip():
+        decrypted = decrypt_secret(stored[SMTP_PASSWORD_KEY])
+        if decrypted is None:
+            unreadable = True
+        else:
+            password = decrypted
+
+    return SmtpConfig(
+        host=text(SMTP_HOST_KEY, env.smtp_host),
+        port=port,
+        user=text(SMTP_USER_KEY, env.smtp_user),
+        password=password,
+        sender=text(SMTP_FROM_KEY, env.smtp_from),
+        starttls=starttls,
+        from_database=bool((stored.get(SMTP_HOST_KEY) or "").strip()),
+        password_unreadable=unreadable,
+    )
+
+
+async def set_smtp(
+    db: AsyncSession, *, host: str, port: str, user: str, password: str | None,
+    sender: str, starttls: bool, actor_id: uuid.UUID,
+) -> None:
+    """Uloží nastavení pošty. Volající commituje.
+
+    `password=None` znamená „nech, co tam je" - formulář heslo nikdy
+    nevypisuje zpátky, takže prázdné pole nesmí uložené heslo smazat.
+    Smazat ho jde vyprázdněním serveru, tedy vypnutím odesílání."""
+    from app.core.crypto import encrypt_secret
+
+    values = {
+        SMTP_HOST_KEY: host.strip(),
+        SMTP_PORT_KEY: str(port).strip(),
+        SMTP_USER_KEY: user.strip(),
+        SMTP_FROM_KEY: sender.strip(),
+        SMTP_STARTTLS_KEY: "1" if starttls else "0",
+    }
+    if password is not None:
+        # Do databáze nikdy v čitelné podobě - skončila by i v zálohách
+        # (app/core/crypto.py).
+        values[SMTP_PASSWORD_KEY] = encrypt_secret(password)
+
+    existing = {row.key: row for row in (
+        await db.execute(select(AppSetting).where(AppSetting.key.in_(list(SMTP_KEYS))))
+    ).scalars().all()}
+
+    for key, value in values.items():
+        row = existing.get(key)
+        if row is None:
+            db.add(AppSetting(key=key, value=value, updated_by=actor_id))
+        else:
+            row.value = value
+            row.updated_by = actor_id
+            row.updated_at = datetime.now(timezone.utc)
+
+
+async def has_stored_smtp_password(db: AsyncSession) -> bool:
+    """Je v databázi uložené heslo? Obrazovka to potřebuje vědět, aniž by
+    ho kdy dostala do ruky."""
+    stored = await _raw_rows(db, (SMTP_PASSWORD_KEY,))
+    return bool((stored.get(SMTP_PASSWORD_KEY) or "").strip())

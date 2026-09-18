@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.notifications import repository
 
-from app.core import mailer
+from app.core import app_settings, mailer
 from app.models.core import User
 from app.models.fleet import Notification, Vehicle
 from app.modules.notifications import preferences
@@ -71,7 +71,8 @@ async def create(
     db.add(notification)
     await db.flush()
 
-    error = await mailer.send_mail(user.email, title, _mail_body(body, link_url))
+    smtp = await app_settings.get_smtp(db)
+    error = await mailer.send_mail(smtp, user.email, title, _mail_body(body, link_url))
     if error is None:
         notification.emailed_at = datetime.now(timezone.utc)
     else:

@@ -860,3 +860,51 @@ než „blíží se to".
 **Skript sám nic neplánuje.** Opakované spouštění je práce systému, ne
 aplikace; takhle jde běh kdykoliv zopakovat ručně nebo si ho prohlédnout
 nanečisto (`--dry-run`), aniž by se cokoliv odeslalo.
+
+---
+
+## R42 — SMTP se nastavuje v aplikaci, heslo se do databáze ukládá zašifrované
+
+**Rozhodnutí.** Server, port, přihlášení, odesílatel a STARTTLS se
+nastavují v *Nastavení → Odesílání e-mailů*. Ukládají se do téže tabulky
+`core.app_settings` jako prahy, jen pod vlastními klíči; `.env` zůstává
+**záložním zdrojem po jednotlivých polích**.
+
+**Proč ne druhá tabulka.** `app_settings` je obyčejné klíč/hodnota a
+`get_all` i `set_values` cizí klíče ignorují, takže obě skupiny vedle
+sebe žijí bez kolize. Druhé úložiště nastavení by znamenalo druhé místo,
+kam se chodí dívat.
+
+**Proč fallback po poli, ne po celé skupině.** Kdo vyplní jen server a
+přihlášení, nemá tím přijít o adresu odesílatele nastavenou v `.env`.
+Nevyplněné pole znamená „tohle neřeším", ne „smazat".
+
+**Heslo se šifruje, a to je tady to podstatné.** Databáze se před každým
+deployem zálohuje do `backups/postgres/*.sql`. To je obyčejný text —
+heslo k firemní poště by v něm bylo čitelné, v tuctu kopií, natrvalo.
+Ukládá se proto zašifrované (Fernet, klíč odvozený ze
+`SESSION_SECRET_KEY`, který leží v `.env` mimo Git a do dumpu se
+nedostane). Záloha tedy obsahuje jen šifrový text.
+
+**Není to ochrana proti rootovi na serveru.** Kdo přečte `.env`, přečte
+i heslo. Chrání to únik zálohy, ne server — a to je přesně ten scénář,
+který u zálohovaného souboru hrozí.
+
+**Rotace klíče se řeší, nepadá se na ní.** Když se `SESSION_SECRET_KEY`
+vymění, heslo se nedá rozšifrovat: `decrypt_secret` vrátí `None`,
+odesílání se zastaví se srozumitelnou hláškou a obrazovka požádá o nové
+zadání. Nikdy se nepokouší přihlásit s prázdným heslem.
+
+**Heslo se nikdy nevrací do prohlížeče**, ani zamaskované. Formulář jen
+prozradí, jestli nějaké uložené je; prázdné pole znamená „nech, co tam
+je". Do auditu jde `password_changed: true/false`, nikdy hodnota ani
+její délka.
+
+**Zkušební e-mail chodí jen na adresu přihlášeného administrátora.**
+Adresa se schválně nebere z formuláře — jinak by z administrace byl
+nástroj na rozesílání pošty komukoliv.
+
+**Odesílání konfiguraci nečte, dostává ji.** `mailer.send_mail` přebírá
+`SmtpConfig` místo sahání do `get_settings()`. Rozhodnutí, odkud se
+nastavení bere, tak zůstává na jednom místě a `mailer` je jen to, co
+pošle, co dostane.

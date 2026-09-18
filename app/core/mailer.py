@@ -9,46 +9,51 @@ the workflow).
 
 With smtp_host unset the app is fully functional - notifications just stay
 in-app only.
+
+Konfigurace se sem **předává**, nečte se tu. Nastavení pošty je od
+etapy 7 v administraci (app/core/app_settings.py:get_smtp) s .env jako
+záložním zdrojem, a odesílání nemá být místo, které o tom rozhoduje -
+jen to, které pošle, co dostane.
 """
 import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
 
-from app.core.config import get_settings
-
 logger = logging.getLogger(__name__)
 
 
-def is_configured() -> bool:
-    return bool(get_settings().smtp_host)
-
-
-def _send_sync(to_email: str, subject: str, body: str) -> None:
-    settings = get_settings()
+def _send_sync(config, to_email: str, subject: str, body: str) -> None:
     message = EmailMessage()
-    message["From"] = settings.smtp_from
+    message["From"] = config.sender
     message["To"] = to_email
     message["Subject"] = subject
     message.set_content(body)
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
-        if settings.smtp_starttls:
+    with smtplib.SMTP(config.host, config.port, timeout=15) as smtp:
+        if config.starttls:
             smtp.starttls()
-        if settings.smtp_user:
-            smtp.login(settings.smtp_user, settings.smtp_password)
+        if config.user:
+            smtp.login(config.user, config.password)
         smtp.send_message(message)
 
 
-async def send_mail(to_email: str, subject: str, body: str) -> str | None:
+async def send_mail(config, to_email: str, subject: str, body: str) -> str | None:
     """Returns None on success, or a short error string to store on the
-    notification row. Never raises."""
-    if not is_configured():
+    notification row. Never raises.
+
+    `config` je app_settings.SmtpConfig."""
+    if not config.is_configured:
         return "SMTP není nakonfigurováno"
+    if getattr(config, "password_unreadable", False):
+        # Uložené heslo nejde rozšifrovat (nejspíš se vyměnil
+        # SESSION_SECRET_KEY). Přihlásit se s prázdným heslem by skončilo
+        # nesrozumitelnou chybou od serveru.
+        return "Uložené heslo k SMTP nelze přečíst – zadejte ho v nastavení znovu"
     if not to_email:
         return "Příjemce nemá e-mailovou adresu"
     try:
-        await asyncio.to_thread(_send_sync, to_email, subject, body)
+        await asyncio.to_thread(_send_sync, config, to_email, subject, body)
         return None
     except Exception as exc:  # noqa: BLE001 - deliberately swallowed, see module docstring
         logger.warning("E-mail notification to %s failed: %s", to_email, exc)

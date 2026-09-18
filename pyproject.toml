@@ -15,6 +15,9 @@ dependencies = [
     "jinja2>=3.1,<4.0",
     "python-multipart>=0.0.12",
     "itsdangerous>=2.2,<3.0",
+    # Šifrování hesla k SMTP uloženého v databázi - bez toho by bylo
+    # čitelné v každé záloze pg_dump (app/core/crypto.py).
+    "cryptography>=43,<47",
     "pillow>=10.4,<11.0",
     # Náhled prvního listu PDF v seznamu dokumentů. Samostatná wheel
     # (engine z Chrome), žádné systémové balíčky navíc. Aplikace bez ní

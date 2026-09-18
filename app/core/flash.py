@@ -15,6 +15,7 @@ MESSAGES: dict[str, str] = {
     "photo_added": "Fotografie byla nahrána.",
     "photo_deleted": "Fotografie byla odstraněna.",
     "settings_saved": "Nastavení bylo uloženo.",
+    "test_mail_sent": "Zkušební e-mail byl odeslán na vaši adresu.",
     "user_created": "Uživatel byl založen.",
     "user_updated": "Změny uživatele byly uloženy.",
     "password_changed": "Heslo bylo změněno.",

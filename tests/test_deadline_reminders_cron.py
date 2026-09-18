@@ -28,7 +28,7 @@ def sent_mail(monkeypatch):
 
     recorded: list[tuple[str, str]] = []
 
-    async def fake_send(to_email: str, subject: str, body: str):
+    async def fake_send(config, to_email: str, subject: str, body: str):
         recorded.append((to_email, subject))
         return None  # None = odesláno bez chyby
 

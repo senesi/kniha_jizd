@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Odesílání e-mailů &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-extrabold tracking-tight">Odesílání e-mailů</h1>
+  <a href="/kniha-jizd/settings" class="text-sm text-muted2 hover:text-accent">&larr; Nastavení</a>
+</div>
+
+{% if error %}
+<div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-5 text-sm font-semibold max-w-2xl">
+  {{ error }}
+</div>
+{% endif %}
+
+{# Stav na první pohled: bez něj se nedá poznat, jestli upozornění vůbec
+   odcházejí, a to je přesně ta otázka, kvůli které sem člověk jde. #}
+<div class="kj-card mb-4 max-w-2xl border-l-4 {% if smtp.is_configured %}!border-l-success{% else %}!border-l-warning{% endif %}">
+  {% if smtp.password_unreadable %}
+  <div class="font-bold text-danger">Uložené heslo nelze přečíst</div>
+  <p class="text-sm text-muted2 mt-1">
+    Nejspíš se změnil klíč aplikace (<code>SESSION_SECRET_KEY</code>). Zadejte heslo znovu,
+    dokud to neuděláte, e-maily odcházet nebudou.
+  </p>
+  {% elif smtp.is_configured %}
+  <div class="font-bold text-success">Odesílání je nastavené</div>
+  <p class="text-sm text-muted2 mt-1">
+    Server <strong>{{ smtp.host }}:{{ smtp.port }}</strong>, odesílatel <strong>{{ smtp.sender }}</strong>.
+    {% if not smtp.from_database %}Hodnoty pocházejí ze souboru <code>.env</code> na serveru.{% endif %}
+  </p>
+  {% else %}
+  <div class="font-bold text-warning">Odesílání není nastavené</div>
+  <p class="text-sm text-muted2 mt-1">
+    Upozornění na termíny, rezervace a závady se zapisují do aplikace, ale nikomu
+    nedorazí e-mailem. Vyplňte server níž.
+  </p>
+  {% endif %}
+</div>
+
+<form method="post" action="/kniha-jizd/settings/mail" class="kj-card max-w-2xl">
+  {{ csrf_field(request) }}
+
+  <div class="grid sm:grid-cols-3 gap-x-4">
+    <div class="sm:col-span-2">
+      <label class="kj-label mt-0">Server (SMTP host)</label>
+      <input class="kj-input" name="smtp_host" value="{{ smtp.host }}"
+             placeholder="např. smtp.vasedomena.cz" autocomplete="off">
+    </div>
+    <div>
+      <label class="kj-label mt-0 sm:mt-0">Port</label>
+      <input class="kj-input" name="smtp_port" type="number" min="1" max="65535"
+             value="{{ smtp.port }}" inputmode="numeric">
+    </div>
+  </div>
+
+  <label class="kj-label">Přihlašovací jméno</label>
+  <input class="kj-input" name="smtp_user" value="{{ smtp.user }}" autocomplete="off">
+
+  <label class="kj-label">Heslo</label>
+  {# Uložené heslo se do formuláře nikdy nevrací - ani zamaskované. Kdo má
+     přístup k této stránce, nemá tím získat přístup k heslu samotnému. #}
+  <input class="kj-input" name="smtp_password" type="password" autocomplete="new-password"
+         placeholder="{{ 'uloženo – vyplňte jen při změně' if smtp_password_set else 'zatím nenastaveno' }}">
+  <p class="text-xs text-muted mt-1">
+    Prázdné pole ponechá heslo beze změny. Ukládá se zašifrované, takže se nedostane
+    ani do záloh databáze v čitelné podobě.
+  </p>
+
+  <label class="kj-label">Adresa odesílatele</label>
+  <input class="kj-input" name="smtp_from" type="email" value="{{ smtp.sender }}"
+         placeholder="kniha-jizd@vasedomena.cz">
+
+  <label class="flex items-start gap-3 mt-4 cursor-pointer">
+    <input type="checkbox" name="smtp_starttls" value="1"
+           class="mt-0.5 w-6 h-6 shrink-0 rounded border-border2 text-accent focus:ring-accent"
+           {% if smtp.starttls %}checked{% endif %}>
+    <span>
+      <span class="block font-bold">Šifrovat spojení (STARTTLS)</span>
+      <span class="block text-sm text-muted2">
+        Nechte zapnuté, pokud poskytovatel výslovně nevyžaduje nešifrované spojení.
+      </span>
+    </span>
+  </label>
+
+  <button type="submit" class="kj-btn mt-5 w-full sm:w-auto">Uložit nastavení</button>
+</form>
+
+{# Zkušební e-mail jde vždycky na adresu přihlášeného administrátora, ne na
+   adresu z formuláře - jinak by šlo přes administraci rozesílat poštu
+   komukoliv. #}
+<form method="post" action="/kniha-jizd/settings/mail/test" class="kj-card max-w-2xl mt-4">
+  {{ csrf_field(request) }}
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2">Zkouška</h2>
+  <p class="text-sm text-muted2 mt-2">
+    Odešle zkušební zprávu na <strong>{{ user.email }}</strong>, tedy na vaši vlastní adresu.
+    Uložte nastavení dřív, než zkoušku spustíte.
+  </p>
+  <button type="submit" class="kj-btn-secondary mt-3 w-full sm:w-auto"
+          {% if not smtp.is_configured %}disabled{% endif %}>
+    Poslat zkušební e-mail
+  </button>
+</form>
+{% endblock %}

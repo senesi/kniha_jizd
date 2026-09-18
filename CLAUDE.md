@@ -37,7 +37,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 5 | tankování / nabíjení, účtenky, OCR infrastruktura | **hotovo**; chybí jen napojení skutečného OCR enginu (`OCR_PROVIDER=none`) |
 | 6 | servis a dokumenty vozidla | **hotovo** |
 | 6b | kola/pneumatiky a výdaje vozidla | **hotovo** (nad rámec původních etap) |
-| 7 | e-mailové notifikace | **hotovo**; připomínky termínů běží denně v 7:00 z cronu (`docs/SERVER_SETUP.md` kap. 6b). Pozor: `SMTP_HOST` na produkci není vyplněný, takže notifikace zatím zůstávají jen v aplikaci |
+| 7 | e-mailové notifikace | **hotovo**; připomínky termínů běží denně v 7:00 z cronu (`docs/SERVER_SETUP.md` kap. 6b), SMTP se nastavuje v aplikaci (Nastavení → Odesílání e-mailů). Dokud ho nikdo nevyplní, zůstávají upozornění jen v aplikaci |
 | 8 | kniha jízd, filtry, exporty XLSX/CSV/PDF | **hotovo** |
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
 | 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | **nasazeno a běží**; zbývá položka v rozcestníku a pravidelné zálohy |
@@ -106,8 +106,8 @@ app/
   core/        průřezové věci: config, db, deps (oprávnění), csrf, audit,
                photos, documents, previews (miniatury dokumentů),
                pdf_font (diakritika v PDF), notification_types
-               (katalog typů notifikací), mailer, app_settings,
-               fleet_status
+               (katalog typů notifikací), crypto (šifrování hesel
+               v databázi), mailer, app_settings, fleet_status
                (semafor), fuel (l vs. kWh), ocr (pomůcka, ne závislost),
                labels, flash, templates
   models/      core.py (uživatelé, role, audit, nastavení)
