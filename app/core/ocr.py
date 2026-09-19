@@ -219,23 +219,57 @@ _DATA_LABELS = re.compile(
 )
 
 
-def _find_station(text: str) -> str | None:
+def _match_known(candidate: str, known_stations) -> str | None:
+    """Nejbližší název, který už někdo u tohohle vozového parku zadal.
+
+    OCR z hlavičky nikdy nevyjde přesně - ze "STPA CZ s. r. o." udělá
+    "sTPA CZ s.r.0." nebo "STPA CZ s.¥Y.0,". Jakmile ale uživatel jméno
+    jednou opraví, uloží se a příště se podle něj pozná i rozsypaná
+    varianta. Vrací se **uložené znění**, ne to přečtené.
+
+    Práh 0,6 je volný schválně: názvy stanic se mezi sebou liší dost na
+    to, aby se nepletly, a rozdíl mezi "s.r.0." a "s. r. o." je velký."""
+    if not candidate or not known_stations:
+        return None
+    import difflib
+
+    normalised = {_station_key(name): name for name in known_stations if name}
+    match = difflib.get_close_matches(
+        _station_key(candidate), list(normalised), n=1, cutoff=0.6,
+    )
+    return normalised[match[0]] if match else None
+
+
+def _station_key(name: str) -> str:
+    """Porovnávací tvar: bez mezer, teček a velikosti písmen.
+
+    "STPA CZ s. r. o." a "sTPA CZ s.r.0." se tím dostanou na dostřel."""
+    return re.sub(r"[^\w]", "", name).lower()
+
+
+def _find_station(text: str, known_stations=()) -> str | None:
     """Název čerpací stanice z hlavičky účtenky.
 
-    Nejdřív známé sítě kdekoliv v textu - z těch vyjde použitelné jméno.
-    Když žádná není, vezme se první řádek hlavičky, který vypadá jako
-    název firmy a ne jako údaj o tankování. U účtenky, kde se hlavička
-    nepřečetla vůbec, se radši nevrátí nic: špatný název je horší než
-    prázdné pole, protože ho uživatel jen tak nepřepíše."""
+    Pořadí: už zadaná jména (ta jsou správně, protože je psal člověk),
+    pak známé sítě kdekoliv v textu, nakonec první řádek hlavičky, který
+    vypadá jako firma. U účtenky, kde se hlavička nepřečetla vůbec, se
+    radši nevrátí nic: špatný název je horší než prázdné pole, protože
+    ho uživatel jen tak nepřepíše."""
+    header = None
+    for line in text.splitlines()[:4]:
+        header = _clean_station_line(line)
+        if header:
+            break
+
+    learned = _match_known(header, known_stations)
+    if learned:
+        return learned
+
     for station in KNOWN_STATIONS:
         if re.search(rf"\b{re.escape(station)}\b", text, re.IGNORECASE):
             return station
 
-    for line in text.splitlines()[:4]:
-        candidate = _clean_station_line(line)
-        if candidate:
-            return candidate
-    return None
+    return header
 
 
 def _clean_station_line(line: str) -> str | None:
@@ -244,9 +278,14 @@ def _clean_station_line(line: str) -> str | None:
         return None
 
     # Smetí na začátku řádku: OCR z okraje účtenky často udělá "=" nebo
-    # osamocené písmeno před názvem ("=TPA CZ", "sTPA CZ").
+    # jiný nepísmenný znak před názvem ("=TPA CZ").
     cleaned = re.sub(r"^[^\wÁ-Žá-ž]+", "", cleaned)
-    cleaned = re.sub(r"^[a-z](?=[A-ZÁ-Ž])", "", cleaned)
+    # Malé písmeno před velkými se NEMAŽE, jen zvětší. Původně se
+    # zahazovalo jako smetí z okraje - jenže u "sTPA CZ s.r.o." to "S"
+    # do názvu patřilo a heuristika správnou informaci ničila. Přečíst
+    # velké písmeno jako malé je u OCR mnohem běžnější než vymyslet si
+    # celé písmeno navíc.
+    cleaned = re.sub(r"^([a-zá-ž])(?=[A-ZÁ-Ž]{2})", lambda m: m.group(1).upper(), cleaned)
     cleaned = cleaned.strip(" .,-|")
 
     # Dvojtečka v hlavičce znamená "popisek : hodnota", ne název firmy.
@@ -323,7 +362,7 @@ def _find_per_unit(text: str) -> float | None:
     return None
 
 
-def parse_receipt_text(text: str) -> ReceiptReading | None:
+def parse_receipt_text(text: str, known_stations=()) -> ReceiptReading | None:
     """Vytáhne z rozpoznaného textu, co jde. Oddělené jako čistá funkce -
     právě tady vznikají chyby (desetinná čárka, mezera v tisících,
     jednotka přilepená k číslu, zaměněná písmena), takže se to musí dát
@@ -358,7 +397,7 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
         per_unit = round(total / quantity, 2)
 
     reading = ReceiptReading(
-        station=_find_station(text),
+        station=_find_station(text, known_stations),
         fueled_at=_find_date(text),
         quantity=quantity,
         unit=unit,
@@ -369,7 +408,7 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
     return reading if reading.has_anything else None
 
 
-async def read_receipt(image_bytes: bytes) -> ReceiptReading | None:
+async def read_receipt(image_bytes: bytes, known_stations=()) -> ReceiptReading | None:
     """Pokus o přečtení účtenky. Stejná pravidla jako u tachometru: vrací
     None, kdykoliv OCR není k dispozici, selže nebo nic nenajde, a nikdy
     nevyhazuje výjimku."""
@@ -380,7 +419,7 @@ async def read_receipt(image_bytes: bytes) -> ReceiptReading | None:
     except Exception as exc:  # noqa: BLE001 - viz docstring modulu
         logger.warning("OCR účtenky selhalo: %s", exc)
         return None
-    return parse_receipt_text(text or "")
+    return parse_receipt_text(text or "", known_stations)
 
 
 def _prepare(image_bytes: bytes):

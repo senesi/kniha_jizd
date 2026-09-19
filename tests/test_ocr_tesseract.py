@@ -260,7 +260,7 @@ async def test_reading_works_without_filling_quantity(logged_in_client, csrf_tok
     """Jádro opravy: odeslání BEZ množství musí projít a spustit OCR."""
     monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
 
-    async def fake_read(image_bytes):
+    async def fake_read(image_bytes, known_stations=()):
         from app.core.ocr import ReceiptReading
         return ReceiptReading(quantity=48.5, unit="l", price_total_czk=1886.65)
 
@@ -307,7 +307,7 @@ async def test_unreadable_receipt_is_still_kept(logged_in_client, csrf_token, mo
     proto, že z ní nic nevyšlo, by bylo horší než ji nepřečíst."""
     monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
 
-    async def reads_nothing(image_bytes):
+    async def reads_nothing(image_bytes, known_stations=()):
         return None
 
     monkeypatch.setattr(ocr, "read_receipt", reads_nothing)
@@ -336,7 +336,7 @@ async def test_normal_save_still_works_when_ocr_reads_nothing(
     """Regrese: běžné uložení s fotkou nesmí opravou zmizet."""
     monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
 
-    async def reads_nothing(image_bytes):
+    async def reads_nothing(image_bytes, known_stations=()):
         return None
 
     monkeypatch.setattr(ocr, "read_receipt", reads_nothing)
@@ -536,9 +536,12 @@ def test_header_is_used_when_no_chain_matches():
     assert reading.station == "TPA CZ s.r.o"
 
 
-@pytest.mark.parametrize("junk", ["=TPA CZ s.r.o.", "sTPA CZ s.r.o.", "|TPA CZ s.r.o."])
-def test_leading_ocr_junk_is_stripped(junk):
-    """Z okraje účtenky OCR často udělá znak navíc před názvem."""
+@pytest.mark.parametrize("junk", ["=TPA CZ s.r.o.", "|TPA CZ s.r.o.", "  TPA CZ s.r.o."])
+def test_leading_non_letter_junk_is_stripped(junk):
+    """Z okraje účtenky OCR často udělá nepísmenný znak před názvem.
+
+    Pozor: **písmeno se nemaže.** Dřív tu bylo i „sTPA CZ", jenže to „S"
+    do názvu patřilo - viz test_leading_letter_belongs_to_the_name."""
     from app.core.ocr import parse_receipt_text
 
     reading = parse_receipt_text(f"{junk}\nLitry : 40,00")
@@ -611,3 +614,85 @@ def test_real_headers_survive_the_stricter_rules(line, expected):
     from app.core.ocr import _clean_station_line
 
     assert _clean_station_line(line) == expected
+
+
+# ======================================================================
+# Název stanice se učí z toho, co už uživatel zadal
+# ======================================================================
+
+def test_leading_letter_belongs_to_the_name():
+    """Původně se malé písmeno před velkými maže jako smetí z okraje.
+
+    Jenže u „STPA CZ s. r. o." to „S" do názvu patří - OCR jen přečetlo
+    velké písmeno jako malé. Heuristika tím ničila správnou informaci."""
+    from app.core.ocr import _clean_station_line
+
+    assert _clean_station_line("sTPA CZ s.r.0.") == "STPA CZ s.r.0"
+
+
+@pytest.mark.parametrize("mangled", [
+    "sTPA CZ s.r.0.",
+    "=TPA cz S.n.d.",
+    "STPA CZ s.¥Y.0,",
+    "STPA CZ s.r.o.",
+])
+def test_known_station_wins_over_ocr_noise(mangled):
+    """Jakmile uživatel název jednou opraví, pozná se i rozsypaný."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(
+        f"{mangled}\nLitry : 40,00", known_stations=["STPA CZ s. r. o."],
+    )
+    assert reading.station == "STPA CZ s. r. o."
+
+
+def test_a_different_station_is_not_absorbed():
+    """Uložené jméno nesmí přebít stanici, která s ním nemá nic
+    společného."""
+    from app.core.ocr import parse_receipt_text
+
+    for other in ("Benzina a.s.", "OMV Ceska republika", "Globus Praha"):
+        reading = parse_receipt_text(
+            f"{other}\nLitry : 40,00", known_stations=["STPA CZ s. r. o."],
+        )
+        assert reading.station != "STPA CZ s. r. o.", other
+
+
+def test_without_a_dictionary_the_header_is_used_as_read():
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("STPA CZ s.r.o.\nLitry : 40,00")
+    assert reading.station == "STPA CZ s.r.o"
+
+
+def test_station_key_ignores_punctuation_and_case():
+    """„s. r. o." a „s.r.0." se musí dostat na dostřel."""
+    from app.core.ocr import _station_key
+
+    assert _station_key("STPA CZ s. r. o.") == "stpaczsro"
+    assert _station_key("sTPA CZ s.r.o") == "stpaczsro"
+
+
+async def test_known_stations_come_from_previous_fuelings(logged_in_client, csrf_token):
+    """Slovník se plní sám tím, jak lidé tankování zapisují."""
+    from app.core.db import async_session_factory
+    from app.modules.fuelings import repository
+    from tests.conftest import create_vehicle
+
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="ST-01", license_plate="1ST 0001",
+        current_odometer_km="100000",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+    await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new",
+        data={"csrf_token": extract_csrf_token(form.text),
+              "fueled_at": date.today().isoformat(), "quantity": "40",
+              "odometer_km": "100200", "station": "STPA CZ s. r. o."},
+        follow_redirects=False,
+    )
+
+    async with async_session_factory() as db:
+        stations = await repository.known_stations(db)
+
+    assert "STPA CZ s. r. o." in stations

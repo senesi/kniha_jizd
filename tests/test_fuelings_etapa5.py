@@ -304,7 +304,7 @@ async def test_ocr_result_is_offered_for_confirmation(logged_in_client, csrf_tok
     potvrzení se uloží."""
     from app.core import ocr
 
-    async def fake_read(image_bytes):
+    async def fake_read(image_bytes, known_stations=()):
         return ocr.ReceiptReading(
             fueled_at=date(2026, 3, 12), quantity=48.5, unit="l",
             price_per_unit_czk=38.90, price_total_czk=1887.15, raw_text="x",

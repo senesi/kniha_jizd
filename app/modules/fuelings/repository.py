@@ -60,3 +60,16 @@ async def totals_for_vehicle(db: AsyncSession, vehicle_id: uuid.UUID) -> list[di
         {"unit": unit, "quantity": quantity, "price": price, "count": count}
         for unit, quantity, price, count in result.all()
     ]
+
+
+async def known_stations(db: AsyncSession) -> list[str]:
+    """Názvy stanic, které už někdo zadal.
+
+    Slouží OCR jako slovník: jakmile uživatel jméno jednou opraví,
+    příští účtenka od téže pumpy se podle něj pozná i rozsypaná."""
+    result = await db.execute(
+        select(TripFueling.station)
+        .where(TripFueling.station.is_not(None), TripFueling.station != "")
+        .distinct()
+    )
+    return [station for (station,) in result.all()]

@@ -100,7 +100,8 @@ async def _read_receipt_now(
     neúspěchu schválně: uživatel ji už jednou vyfotil a nutit ho to
     opakovat jen proto, že OCR nic nenašlo, by bylo horší než to
     nepřečíst."""
-    reading = await ocr.read_receipt(photo[2])
+    # Slovník už zadaných stanic - viz ocr._match_known.
+    reading = await ocr.read_receipt(photo[2], await repository.known_stations(db))
     try:
         attachment = await vehicles_service.add_attachment(
             db, vehicle_id=vehicle_id, kind="fuel_receipt",

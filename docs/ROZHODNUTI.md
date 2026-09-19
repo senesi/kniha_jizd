@@ -1212,3 +1212,16 @@ pole, protože to uživatel jen tak nepřepíše.
 
 **Samotný název stanice nestačí na nabídku.** Je to odhad z hlavičky;
 bez jediného čísla se uživateli nic neukazuje.
+
+**Název stanice se učí z toho, co už někdo zadal.** Heuristika z
+hlavičky nikdy nevyjde přesně: ze „STPA CZ s. r. o." udělá tesseract
+„sTPA CZ s.r.0." nebo „STPA CZ s.¥Y.0,". Jakmile ale uživatel jméno
+jednou opraví, uloží se k tankování a příští účtenka se podle něj pozná
+i rozsypaná — porovnává se tvar bez mezer, teček a velikosti písmen
+(`difflib`, práh 0,6). Vrací se **uložené znění**, ne to přečtené.
+
+**Písmeno na začátku se nemaže, jen zvětší.** Původně tam bylo pravidlo
+„malé písmeno před velkými je smetí z okraje", takže z „sTPA CZ" vzniklo
+„TPA CZ". Jenže to „S" do názvu patřilo — heuristika postavená na mé
+domněnce o jménu firmy ničila správnou informaci. Přečíst velké písmeno
+jako malé je u OCR mnohem běžnější než vymyslet si celé písmeno navíc.
