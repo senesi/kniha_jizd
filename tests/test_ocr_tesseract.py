@@ -587,3 +587,27 @@ def test_station_alone_is_not_worth_a_suggestion():
     from app.core.ocr import parse_receipt_text
 
     assert parse_receipt_text("TPA CZ s.r.o.\nJana Masaryka 708/12") is None
+
+
+@pytest.mark.parametrize("line", [
+    "Sta,",                 # útržek nepřečteného řádku
+    "»PA : SkamastavoO4",   # popisek : hodnota
+    "Stojan: 1 Nafta",
+    "AB",                   # příliš krátké
+])
+def test_header_fragments_are_not_stations(line):
+    """Obojí prošlo na skutečné účtence, než se pravidla přitvrdila."""
+    from app.core.ocr import _clean_station_line
+
+    assert _clean_station_line(line) is None
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("TPA CZ s.r.o.", "TPA CZ s.r.o"),
+    ("CERPACI STANICE", "CERPACI STANICE"),
+    ("MOL Ceska republika", "MOL Ceska republika"),
+])
+def test_real_headers_survive_the_stricter_rules(line, expected):
+    from app.core.ocr import _clean_station_line
+
+    assert _clean_station_line(line) == expected

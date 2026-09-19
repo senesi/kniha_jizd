@@ -249,8 +249,16 @@ def _clean_station_line(line: str) -> str | None:
     cleaned = re.sub(r"^[a-z](?=[A-ZÁ-Ž])", "", cleaned)
     cleaned = cleaned.strip(" .,-|")
 
+    # Dvojtečka v hlavičce znamená "popisek : hodnota", ne název firmy.
+    # Na skutečné účtence takhle prošlo "PA : SkamastavoO4".
+    if ":" in cleaned:
+        return None
+
     letters = sum(1 for char in cleaned if char.isalpha())
-    if letters < 3 or len(cleaned) < 3:
+    # Přísněji než u známých sítí: ty jsou vyjmenované, takže "MOL" ani
+    # "OMV" se sem nedostane. Tady se jen hádá z hlavičky a útržek jako
+    # "Sta," není název - je to zbytek po nepřečteném řádku.
+    if letters < 4 or len(cleaned) < 5:
         return None
     # Hlavička s názvem firmy má skoro vždycky velké písmeno. Věta psaná
     # malými ("dekujeme za nakup") je patička, ne název - a nabídnout ji
