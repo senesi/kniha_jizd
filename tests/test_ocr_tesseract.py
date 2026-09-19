@@ -356,3 +356,105 @@ async def test_normal_save_still_works_when_ocr_reads_nothing(
         follow_redirects=False,
     )
     assert response.status_code == 303, response.text
+
+
+# ======================================================================
+# Tvar skutečné české účtenky
+# ======================================================================
+#
+# Parser byl postavený na tvaru "48,50 l", který jsem si vymyslel v
+# testovacím obrázku. Skutečná účtenka z pumpy píše popisek PŘED číslo:
+# "Litry : 0047.45". Z první reálné účtenky se proto přečetlo jen datum
+# a celková částka - zrovna množství a cena za litr chyběly.
+
+REAL_RECEIPT = """=TPA cz S.n.d.
+Ja
+na Masaryka 708712
+Praha 2, 120 00
+Stojan: 1 Nafta
+Řidič : OOOOO - a
+Stroj : 10013 -— D
+SP : Skamas tavOq
+Litry : 0047.45
+Ke “1 38,50
+Celkem: 01826,80 Kč
+22.10.2023
+18:18
+01238
+Datum *
+Cas :
+Doklad č-"""
+
+
+def test_real_czech_pump_receipt():
+    """Doslova to, co tesseract přečetl z první skutečné účtenky."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(REAL_RECEIPT)
+
+    assert reading is not None
+    assert reading.quantity == 47.45
+    assert reading.unit == "l"
+    assert reading.price_total_czk == 1826.80
+    assert str(reading.fueled_at) == "2023-10-22"
+    # Cena za litr se z "Ke “1 38,50" vyčíst nedá, ale dopočítá se.
+    assert reading.price_per_unit_czk == 38.50
+
+
+def test_receipt_numbers_are_not_mistaken_for_quantity():
+    """Na účtence je i číslo stojanu, stroje a dokladu."""
+    from app.core.ocr import parse_receipt_text
+
+    for noise in ("Stojan: 1 Nafta", "Doklad c: 01238", "Stroj : 10013"):
+        reading = parse_receipt_text(noise)
+        assert reading is None or reading.quantity is None, noise
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("Litry : 0047.45", 47.45),
+    ("Litry: 47,45", 47.45),
+    ("Litru 47.45", 47.45),
+    ("Objem: 42,10", 42.10),
+    ("Množství 31,5", 31.5),
+    ("Mnozstvi 31,5", 31.5),
+])
+def test_labelled_quantity_forms(line, expected):
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(line)
+    assert reading is not None, line
+    assert reading.quantity == expected
+    assert reading.unit == "l"
+
+
+@pytest.mark.parametrize("line", ["kWh : 38,20", "Energie: 38,20", "38,20 kWh"])
+def test_labelled_kwh_forms(line):
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(line)
+    assert reading is not None, line
+    assert reading.unit == "kWh"
+    assert reading.quantity == 38.20
+
+
+def test_price_per_unit_is_derived_when_unreadable():
+    """Spolehlivější než hádat z rozsypaného „Kč/l"."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("Litry : 40,00\nCelkem: 1400,00 Kč")
+    assert reading.price_per_unit_czk == 35.00
+
+
+def test_printed_price_per_unit_wins_over_the_derived_one():
+    """Když je čitelná, bere se ta z účtenky."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("38,90 Kc/l\nLitry : 40,00\nCelkem: 1400,00 Kč")
+    assert reading.price_per_unit_czk == 38.90
+
+
+def test_nothing_is_derived_without_both_numbers():
+    from app.core.ocr import parse_receipt_text
+
+    only_quantity = parse_receipt_text("Litry : 40,00")
+    assert only_quantity.price_per_unit_czk is None

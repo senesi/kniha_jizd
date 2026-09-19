@@ -1175,3 +1175,18 @@ cenu za litr zahodil. Jednotka litru se proto hledá jako `[l|I1!]`, ale
 jen tam, kde stojí samostatně za číslem: `48,501` zůstává číslo a
 `1886,65 Kc` zůstává cena. Je to přesně ten druh chyby, který se
 nedá vymyslet u stolu — našel ho až obrázek prohnaný skutečným enginem.
+
+**Česká účtenka píše popisek před číslo.** Když přišla první skutečná
+účtenka, ukázalo se, že tesseract ji přečetl dobře — `Litry : 0047.45`,
+`Celkem: 01826,80 Kč` — ale parser z ní vzal jen datum a částku. Byl
+totiž postavený na tvaru `48,50 l`, který jsem si vymyslel v testovacím
+obrázku. Hledá se proto obojí: `popisek : hodnota` i `hodnota jednotka`.
+
+**Cena za jednotku se dopočítává.** Na účtence stojí „Kč/l 38,50" a
+tesseract z toho udělal `Ke “1 38,50`; na to se rozumný vzor napsat
+nedá. Podíl celkové ceny a množství vyjde stejně a u slevy dokonce
+správněji — je to skutečně zaplacená cena za litr. Když je údaj na
+účtence čitelný, má přednost.
+
+**Poučení pro příště:** syntetický testovací obrázek ověřil jen to, že
+parser rozumí sám sobě. Skutečný podklad ukázal chybu během minuty.

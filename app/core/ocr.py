@@ -175,6 +175,69 @@ def _find_date(text: str) -> date | None:
 #: zahodí, přestože je text jinak přečtený správně.
 LITER_LOOKALIKE = r"[l|I1!]"
 
+#: Číslo tak, jak ho účtenka píše: s čárkou i tečkou, s mezerou v
+#: tisících a klidně s úvodními nulami ("0047.45").
+NUMBER = r"\d[\d  ]*(?:[.,]\d+)?"
+
+#: České pumpy tisknou "popisek : hodnota", ne "hodnota jednotka".
+#: Na skutečné účtence to byly řádky "Litry : 0047.45" a
+#: "Celkem: 01826,80 Kč". Parser postavený jen na tvaru "48,50 l" z nich
+#: nepřečetl vůbec nic - a to je zrovna ten údaj, kvůli kterému OCR je.
+LITER_LABELS = r"litr[yůuú]?|objem|mno[žz]stv[ií]"
+KWH_LABELS = r"kwh|energie|nabito"
+
+
+def _find_quantity(text: str) -> tuple[str | None, float | None]:
+    """Množství a jednotka. Zkouší oba tvary, které účtenky používají.
+
+    Nejdřív "popisek : hodnota" (české pumpy), pak "hodnota jednotka"
+    (běžnější v zahraničí a na malých tiskárnách). kWh má přednost před
+    litry - "kWh" obsahuje "h", ne "l", takže se nepoplete."""
+    for labels, unit in ((KWH_LABELS, UNIT_KWH), (LITER_LABELS, UNIT_LITERS)):
+        labelled = re.search(rf"(?:{labels})\s*[:.]?\s*({NUMBER})", text, re.IGNORECASE)
+        if labelled:
+            value = _czech_number(labelled.group(1))
+            if value is not None:
+                return unit, value
+
+    kwh = re.search(rf"({NUMBER})\s*kwh\b", text, re.IGNORECASE)
+    if kwh:
+        value = _czech_number(kwh.group(1))
+        if value is not None:
+            return UNIT_KWH, value
+
+    # Jednotka musí stát samostatně za číslem, ne uvnitř slova - jinak by
+    # "48,50 Kc" dalo litry kvůli písmenu v "Kc". Proto mezera před a
+    # konec slova za. "1" je mezi záměnami schválně, ale jen s mezerou
+    # před sebou, aby se "48,501" nečetlo jako 48,50 l.
+    liters = re.search(rf"({NUMBER})\s+{LITER_LOOKALIKE}(?![\w.,])", text, re.IGNORECASE)
+    if liters:
+        value = _czech_number(liters.group(1))
+        if value is not None:
+            return UNIT_LITERS, value
+
+    return None, None
+
+
+def _find_per_unit(text: str) -> float | None:
+    """Cena za jednotku, když je čitelně napsaná.
+
+    "Kč" i "Kc" i "CZK" - tiskárny na pumpách často diakritiku neumí."""
+    currency = r"(?:kč|kc|czk)"
+    unit = rf"(?:kwh|{LITER_LOOKALIKE})"
+
+    for pattern in (
+        rf"({NUMBER})\s*{currency}\s*/\s*{unit}",   # 38,50 Kč/l
+        rf"{currency}\s*/\s*{unit}\s*:?\s*({NUMBER})",  # Kč/l: 38,50
+        rf"cena\s*za\s*(?:litr|kwh)\D{{0,6}}({NUMBER})",
+    ):
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = _czech_number(match.group(1))
+            if value is not None:
+                return value
+    return None
+
 
 def parse_receipt_text(text: str) -> ReceiptReading | None:
     """Vytáhne z rozpoznaného textu, co jde. Oddělené jako čistá funkce -
@@ -186,25 +249,7 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
 
     # Jednotka rozhoduje, jak číst množství. kWh se hledá první - "kWh"
     # obsahuje "h", ne "l", takže se nepoplete s litry.
-    unit = None
-    quantity = None
-
-    kwh = re.search(r"(\d+(?:[.,]\d+)?)\s*kwh\b", text, re.IGNORECASE)
-    if kwh:
-        unit, quantity = UNIT_KWH, _czech_number(kwh.group(1))
-    else:
-        # Jednotka musí stát samostatně za číslem, ne uvnitř slova -
-        # jinak by "48,50 Kc" dalo litry kvůli písmenu v "Kc". Proto
-        # mezera před a konec slova za. "1" je mezi záměnami schválně,
-        # ale jen s mezerou před sebou, aby se "48,501" nečetlo jako
-        # 48,50 l.
-        liters = re.search(
-            rf"(\d+(?:[.,]\d+)?)\s+{LITER_LOOKALIKE}(?![\w.,])|(\d+(?:[.,]\d+)?)\s*litr\w*\b",
-            text, re.IGNORECASE,
-        )
-        if liters:
-            raw = liters.group(1) or liters.group(2)
-            unit, quantity = UNIT_LITERS, _czech_number(raw)
+    unit, quantity = _find_quantity(text)
 
     # Celková cena: hledá se u slova, ne jen "největší číslo" - na účtence
     # bývá i číslo karty nebo IČO.
@@ -216,14 +261,14 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
     if total_match:
         total = _czech_number(total_match.group(1))
 
-    per_unit = None
-    # "Kč" i "Kc" i "CZK" - tiskárny na pumpách často diakritiku neumí.
-    per_unit_match = re.search(
-        rf"(\d+(?:[.,]\d+)?)\s*(?:kč|kc|czk)\s*/\s*(?:kwh|{LITER_LOOKALIKE})",
-        text, re.IGNORECASE,
-    )
-    if per_unit_match:
-        per_unit = _czech_number(per_unit_match.group(1))
+    per_unit = _find_per_unit(text)
+    if per_unit is None and quantity and total:
+        # Cena za jednotku bývá na účtence napsaná jako "Kč/l 38,50" a
+        # tesseract z toho udělá třeba "Ke \u201c1 38,50" - na to se
+        # rozumný vzor napsat nedá. Dopočítat ji z celkové ceny a
+        # množství je spolehlivější a vyjde stejně (u slevy dokonce
+        # správněji, protože to je skutečně zaplacená cena).
+        per_unit = round(total / quantity, 2)
 
     reading = ReceiptReading(
         fueled_at=_find_date(text),
