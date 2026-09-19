@@ -76,3 +76,34 @@ async def test_user_edit_keeps_the_submitted_state_after_an_error(
     assert response.status_code == 400
     checkbox = response.text.split('name="is_active"')[1].split(">")[0]
     assert "checked" not in checkbox
+
+
+# --- nahrávání souborů na mobilu ---------------------------------------
+
+def test_no_template_forces_the_camera():
+    """`capture="environment"` na iOS schová „Fotogalerie" i „Vybrat
+    soubor" a nechá jen „Vyfotit teď".
+
+    Atribut se sem dostal jako pohodlí pro řidiče u pumpy, ale zaplatilo
+    se za to tím, že už vyfocenou fotku nešlo přiložit vůbec. Bez něj
+    iOS nabídne obojí a fotoaparát je pořád jedno klepnutí daleko."""
+    offenders = [
+        name for name in ALL_TEMPLATES
+        if "capture=" in (TEMPLATES_DIR / name).read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"šablony vynucují fotoaparát: {offenders}"
+
+
+def test_file_inputs_accept_images():
+    """Regrese: odstranění `capture` nesmělo shodit `accept`."""
+    import re
+
+    inputs = []
+    for name in ALL_TEMPLATES:
+        source = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
+        for match in re.finditer(r'<input[^>]*type="file"[^>]*>', source):
+            inputs.append((name, match.group(0)))
+
+    assert inputs, "nějaká souborová pole existovat musí"
+    without_accept = [(name, tag) for name, tag in inputs if "accept=" not in tag]
+    assert without_accept == [], f"souborové pole bez accept: {without_accept}"

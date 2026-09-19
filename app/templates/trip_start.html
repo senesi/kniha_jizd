@@ -47,9 +47,11 @@
     <p class="text-xs text-muted mt-1">Poslední známý stav: {{ vehicle.current_odometer_km | km }} km</p>
 
     <label class="kj-label">Fotografie tachometru</label>
-    {# capture="environment" otevře na telefonu rovnou zadní fotoaparát.
+    {# Bez: na iOS by ten atribut schoval
+       „Fotogalerie" i „Vybrat soubor" a šlo by jen vyfotit teď hned.
+       Fotoaparát je z nabídky pořád jedno klepnutí daleko.
        Nepovinné - když se fotit nedá, jízda se zahájí i bez toho. #}
-    <input class="kj-input !py-3" type="file" name="odometer_photo" accept="image/*" capture="environment">
+    <input class="kj-input !py-3" type="file" name="odometer_photo" accept="image/*">
     <p class="text-xs text-muted mt-1">Nepovinné, ale doporučené – fotka zůstane u jízdy jako doklad.</p>
   </div>
 
