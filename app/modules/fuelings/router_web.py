@@ -91,6 +91,27 @@ async def _read_receipt(upload: UploadFile | None):
     return upload.filename, upload.content_type, data
 
 
+async def _read_receipt_now(
+    db: AsyncSession, *, photo, vehicle_id, trip_id, actor_id,
+):
+    """Přečte účtenku a **uloží ji**, ať už se něco přečetlo, nebo ne.
+
+    Vrací `(suggestion, attachment_id, error)`. Účtenka se ukládá i při
+    neúspěchu schválně: uživatel ji už jednou vyfotil a nutit ho to
+    opakovat jen proto, že OCR nic nenašlo, by bylo horší než to
+    nepřečíst."""
+    reading = await ocr.read_receipt(photo[2])
+    try:
+        attachment = await vehicles_service.add_attachment(
+            db, vehicle_id=vehicle_id, kind="fuel_receipt",
+            original_filename=photo[0], content_type=photo[1], data=photo[2],
+            actor_id=actor_id, trip_id=trip_id,
+        )
+    except (PhotoTooLarge, UnsupportedPhotoType) as error:
+        return None, None, f"Účtenku se nepodařilo uložit: {error}"
+    return reading, attachment.id, None
+
+
 def _form_context(vehicle: Vehicle, trip: Trip | None = None, **extra) -> dict:
     """`trip=None` je tankování mimo jízdu - formulář je jinak stejný,
     jen má povinný stav tachometru a vrací se na kartu vozidla."""
@@ -100,6 +121,9 @@ def _form_context(vehicle: Vehicle, trip: Trip | None = None, **extra) -> dict:
         "units": available_units(vehicle.fuel_type),
         "default_unit": default_unit(vehicle.fuel_type),
         "fuel_types": FUEL_TYPES,
+        # Bez zapnutého OCR nemá smysl nabízet tlačítko, které nic
+        # nepřečte.
+        "ocr_available": ocr.is_configured(),
         **extra,
     }
 
@@ -170,21 +194,34 @@ async def fueling_create(
         )
 
     photo = await _read_receipt(receipt)
+    # Tlačítko „Přečíst z účtenky" posílá formulář s formnovalidate, tedy
+    # bez vyplněného množství - to má uživateli teprve nabídnout OCR.
+    wants_reading = _text(form, "action") == "read_receipt"
+
+    if wants_reading and photo is None:
+        return await rerender("Nejdřív přiložte fotografii účtenky.", [])
 
     # OCR účtenky: když něco přečte a uživatel to ještě neviděl, ukáže se
     # mu to k potvrzení. Nikdy se neuloží samo (zadání 15/25).
     if photo is not None and "ocr" not in confirmations:
-        reading = await ocr.read_receipt(photo[2])
+        reading, attachment_id, error = await _read_receipt_now(
+            db, photo=photo, vehicle_id=trip.vehicle_id, trip_id=trip.id, actor_id=user.id,
+        )
+        if error:
+            return await rerender(error, [])
         if reading is not None:
-            try:
-                attachment = await vehicles_service.add_attachment(
-                    db, vehicle_id=trip.vehicle_id, kind="fuel_receipt",
-                    original_filename=photo[0], content_type=photo[1], data=photo[2],
-                    actor_id=user.id, trip_id=trip.id,
-                )
-            except (PhotoTooLarge, UnsupportedPhotoType) as error:
-                return await rerender(f"Účtenku se nepodařilo uložit: {error}", [])
-            return await rerender(None, [], suggestion=reading, status_code=200, attachment_id=attachment.id)
+            return await rerender(None, [], suggestion=reading, status_code=200,
+                                  attachment_id=attachment_id)
+        if wants_reading:
+            # Účtenka je uložená, jen z ní nic nevyšlo - ať to uživatel
+            # ví a nečeká, že se pole doplní sama.
+            return await rerender(
+                "Z účtenky se nepodařilo nic přečíst. Uložila se, údaje prosím vyplňte ručně.",
+                [], status_code=200, attachment_id=attachment_id,
+            )
+        # Fotka je uložená, takže se nesmí poslat znovu do add_fueling.
+        photo = None
+        stashed_id = attachment_id
 
     try:
         await service.add_fueling(
@@ -327,21 +364,29 @@ async def vehicle_fueling_create(
         )
 
     photo = await _read_receipt(receipt)
+    wants_reading = _text(form, "action") == "read_receipt"
+
+    if wants_reading and photo is None:
+        return await rerender("Nejdřív přiložte fotografii účtenky.", [])
 
     # Stejný postup jako u jízdy: OCR nikdy neuloží samo, jen nabídne
     # hodnoty k potvrzení (zadání 15/25).
     if photo is not None and "ocr" not in confirmations:
-        reading = await ocr.read_receipt(photo[2])
+        reading, attachment_id, error = await _read_receipt_now(
+            db, photo=photo, vehicle_id=vehicle.id, trip_id=None, actor_id=user.id,
+        )
+        if error:
+            return await rerender(error, [])
         if reading is not None:
-            try:
-                attachment = await vehicles_service.add_attachment(
-                    db, vehicle_id=vehicle.id, kind="fuel_receipt",
-                    original_filename=photo[0], content_type=photo[1], data=photo[2],
-                    actor_id=user.id,
-                )
-            except (PhotoTooLarge, UnsupportedPhotoType) as error:
-                return await rerender(f"Účtenku se nepodařilo uložit: {error}", [])
-            return await rerender(None, [], suggestion=reading, status_code=200, attachment_id=attachment.id)
+            return await rerender(None, [], suggestion=reading, status_code=200,
+                                  attachment_id=attachment_id)
+        if wants_reading:
+            return await rerender(
+                "Z účtenky se nepodařilo nic přečíst. Uložila se, údaje prosím vyplňte ručně.",
+                [], status_code=200, attachment_id=attachment_id,
+            )
+        photo = None
+        stashed_id = attachment_id
 
     try:
         await service.add_fueling(

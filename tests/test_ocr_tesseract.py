@@ -214,3 +214,145 @@ def test_real_receipt_text_from_production():
     assert reading.price_per_unit_czk == 38.9
     assert reading.price_total_czk == 1886.65
     assert reading.fueled_at is not None
+
+
+# ======================================================================
+# Spuštění OCR z formuláře
+# ======================================================================
+#
+# Původní návrh měl slepou uličku: OCR se spouštělo až při odeslání
+# formuláře, jenže pole „Množství" má required, takže prohlížeč odeslání
+# zablokoval. Uživatel musel vyplnit přesně to, co mu mělo OCR nabídnout.
+
+from datetime import date  # noqa: E402
+
+from tests.conftest import create_vehicle, extract_csrf_token  # noqa: E402
+
+
+def _png(text: str = "48,50 l") -> bytes:
+    return _receipt_image([text])
+
+
+async def test_form_offers_a_button_to_read_the_receipt(logged_in_client, csrf_token, monkeypatch):
+    """Bez něj se k OCR nedá dostat - required na množství to zablokuje."""
+    monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
+
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="OC-01", license_plate="1OC 0001",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+
+    assert 'value="read_receipt"' in form.text
+    # formnovalidate je tu to podstatné - jinak prohlížeč odeslání zastaví.
+    assert "formnovalidate" in form.text
+
+
+async def test_button_is_hidden_without_ocr(logged_in_client, csrf_token):
+    """Tlačítko, které nic nepřečte, jen mate."""
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="OC-02", license_plate="1OC 0002",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+    assert 'value="read_receipt"' not in form.text
+
+
+async def test_reading_works_without_filling_quantity(logged_in_client, csrf_token, monkeypatch):
+    """Jádro opravy: odeslání BEZ množství musí projít a spustit OCR."""
+    monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
+
+    async def fake_read(image_bytes):
+        from app.core.ocr import ReceiptReading
+        return ReceiptReading(quantity=48.5, unit="l", price_total_czk=1886.65)
+
+    monkeypatch.setattr(ocr, "read_receipt", fake_read)
+
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="OC-03", license_plate="1OC 0003",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new",
+        data={"csrf_token": extract_csrf_token(form.text),
+              "fueled_at": date.today().isoformat(),
+              "action": "read_receipt", "quantity": "", "odometer_km": ""},
+        files={"receipt": ("uctenka.png", _png(), "image/png")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "Z účtenky jsme přečetli" in response.text
+    assert "48,5" in response.text or "48.5" in response.text
+
+
+async def test_reading_without_a_photo_says_so(logged_in_client, csrf_token, monkeypatch):
+    monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
+
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="OC-04", license_plate="1OC 0004",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new",
+        data={"csrf_token": extract_csrf_token(form.text),
+              "fueled_at": date.today().isoformat(), "action": "read_receipt", "quantity": ""},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "Nejdřív přiložte fotografii" in response.text
+
+
+async def test_unreadable_receipt_is_still_kept(logged_in_client, csrf_token, monkeypatch):
+    """Účtenku už uživatel jednou vyfotil - nutit ho to opakovat jen
+    proto, že z ní nic nevyšlo, by bylo horší než ji nepřečíst."""
+    monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
+
+    async def reads_nothing(image_bytes):
+        return None
+
+    monkeypatch.setattr(ocr, "read_receipt", reads_nothing)
+
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="OC-05", license_plate="1OC 0005",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new",
+        data={"csrf_token": extract_csrf_token(form.text),
+              "fueled_at": date.today().isoformat(), "action": "read_receipt", "quantity": ""},
+        files={"receipt": ("uctenka.png", _png("neni tu nic"), "image/png")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "nepodařilo nic přečíst" in response.text
+    # Uložená je - formulář si ji drží pro následné uložení.
+    assert 'name="receipt_attachment_id"' in response.text
+
+
+async def test_normal_save_still_works_when_ocr_reads_nothing(
+    logged_in_client, csrf_token, monkeypatch,
+):
+    """Regrese: běžné uložení s fotkou nesmí opravou zmizet."""
+    monkeypatch.setattr(ocr.get_settings(), "ocr_provider", "tesseract", raising=False)
+
+    async def reads_nothing(image_bytes):
+        return None
+
+    monkeypatch.setattr(ocr, "read_receipt", reads_nothing)
+
+    vehicle_id = await create_vehicle(
+        logged_in_client, csrf_token, internal_code="OC-06", license_plate="1OC 0006",
+        current_odometer_km="100000",
+    )
+    form = await logged_in_client.get(f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new")
+
+    response = await logged_in_client.post(
+        f"/kniha-jizd/vehicles/{vehicle_id}/fuelings/new",
+        data={"csrf_token": extract_csrf_token(form.text),
+              "fueled_at": date.today().isoformat(),
+              "quantity": "42", "odometer_km": "100300"},
+        files={"receipt": ("uctenka.png", _png(), "image/png")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, response.text

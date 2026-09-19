@@ -148,8 +148,22 @@
     <input class="kj-input !py-3" type="file" name="receipt" accept="image/*">
     <p class="text-xs text-muted mt-1">
       {% if receipt_attachment_id %}Účtenka je už uložená – znovu ji fotit nemusíte.
-      {% else %}Nepovinné. Uloží se k jízdě jako doklad.{% endif %}
+      {% else %}Nepovinné. Uloží se jako doklad.{% endif %}
     </p>
+
+    {% if ocr_available and not receipt_attachment_id %}
+    {# formnovalidate je tu to podstatné: bez něj by prohlížeč odeslání
+       zablokoval kvůli nevyplněnému množství - tedy kvůli údaji, který
+       má uživateli teprve nabídnout OCR. #}
+    <button type="submit" name="action" value="read_receipt" formnovalidate
+            class="kj-btn-secondary w-full mt-3">
+      Přečíst údaje z účtenky
+    </button>
+    <p class="text-xs text-muted mt-1">
+      Přiložte fotografii a klepněte sem – hodnoty se vyplní jako návrh, který
+      potvrdíte nebo přepíšete.
+    </p>
+    {% endif %}
   </div>
 
   <button type="submit" class="kj-btn-hero">Uložit {{ noun.lower() }}</button>
