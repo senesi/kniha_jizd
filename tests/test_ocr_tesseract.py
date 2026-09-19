@@ -458,3 +458,132 @@ def test_nothing_is_derived_without_both_numbers():
 
     only_quantity = parse_receipt_text("Litry : 40,00")
     assert only_quantity.price_per_unit_czk is None
+
+
+# ======================================================================
+# Chyby nalezené na dalších skutečných účtenkách
+# ======================================================================
+
+def test_space_after_the_decimal_comma():
+    """„0057, 46" je 57,46, ne 57.
+
+    Nejhorší druh chyby, jakou OCR může udělat: výsledek vypadá
+    věrohodně a uživatel ho potvrdí. Přečetlo se to na skutečné
+    účtence."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("Litry : 0057, 46\nCelkem: 01752,50 Kč")
+    assert reading.quantity == 57.46
+    # A hned se tím spraví i dopočet ceny za litr.
+    assert reading.price_per_unit_czk == 30.50
+
+
+@pytest.mark.parametrize("line", [
+    "22,10,2023",       # čárky místo teček
+    "22.10,2023",       # každý oddělovač jiný
+    "Datum : 22.10.2023",
+    "22. 10. 2023",
+])
+def test_date_separators_may_be_commas(line):
+    """Tečka a čárka jsou na tisku k nerozeznání."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(f"Litry : 40,00\n{line}")
+    assert str(reading.fueled_at) == "2023-10-22", line
+
+
+def test_total_survives_a_lost_first_letter():
+    """Tesseract z „Celkem:" udělal „elkem:"."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("Litry : 47,45\nelkem: O01826,80 Kč")
+    assert reading.price_total_czk == 1826.80
+
+
+def test_newest_real_receipt():
+    """Doslova to, co tesseract přečetl z nejnovější účtenky."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(
+        "sTPA CZ s.r.0.\nJana Masaryka 708/12\nPraha Z, 6 oo\nYad\n"
+        "Stojan: 1 Nafta\nŘidič : 00000 - O\nStroj : 10013 - D\n"
+        "SP2 : SkamastavO4\nLitry : 0057, 46\nKé “1 : 30,50\n"
+        "Celkem: 01752,50 Kč\nDatum : 17.02.2026\n"
+    )
+    assert reading.quantity == 57.46
+    assert reading.unit == "l"
+    assert reading.price_total_czk == 1752.50
+    assert reading.price_per_unit_czk == 30.50
+    assert str(reading.fueled_at) == "2026-02-17"
+    assert reading.station is not None and "TPA CZ" in reading.station
+
+
+# --- název stanice -----------------------------------------------------
+
+@pytest.mark.parametrize("chain", ["Benzina", "ORLEN", "Shell", "MOL", "OMV", "EuroOil"])
+def test_known_chains_are_recognised(chain):
+    """Ze známé sítě vyjde čisté jméno, ne to, co z loga zbylo po OCR."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(f"{chain} a.s.\nPraha\nLitry : 40,00")
+    assert reading.station == chain
+
+
+def test_header_is_used_when_no_chain_matches():
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("TPA CZ s.r.o.\nJana Masaryka 708/12\nLitry : 40,00")
+    assert reading.station == "TPA CZ s.r.o"
+
+
+@pytest.mark.parametrize("junk", ["=TPA CZ s.r.o.", "sTPA CZ s.r.o.", "|TPA CZ s.r.o."])
+def test_leading_ocr_junk_is_stripped(junk):
+    """Z okraje účtenky OCR často udělá znak navíc před názvem."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(f"{junk}\nLitry : 40,00")
+    assert reading.station.startswith("TPA CZ")
+
+
+def test_no_station_rather_than_a_wrong_one():
+    """Když se hlavička nepřečetla, první řádek je údaj o tankování -
+    ten se jako název firmy nabídnout nesmí."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("Stojan: 1 Nafta\nLitry : 40,00\nCelkem: 1400,00 Kč")
+    assert reading.station is None
+
+
+def test_address_is_not_a_station_name():
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("708/12 Jana Masaryka\nLitry : 40,00")
+    assert reading.station is None
+
+
+def test_station_reaches_the_suggestion_box(monkeypatch):
+    """Pole pro stanici ve formuláři existovalo od začátku, jen ho OCR
+    nikdy nevyplnilo."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("Benzina\nLitry : 40,00")
+    assert reading.station == "Benzina"
+    assert reading.has_anything
+
+
+def test_footer_sentence_is_not_a_station():
+    """„dekujeme za nakup" je patička, ne název firmy."""
+    from app.core.ocr import parse_receipt_text
+
+    assert parse_receipt_text("dekujeme za nakup") is None
+
+    with_data = parse_receipt_text("dekujeme za nakup\nLitry : 40,00")
+    assert with_data.station is None
+    assert with_data.quantity == 40.0
+
+
+def test_station_alone_is_not_worth_a_suggestion():
+    """Odhadnutý název bez jediného čísla není nabídka."""
+    from app.core.ocr import parse_receipt_text
+
+    assert parse_receipt_text("TPA CZ s.r.o.\nJana Masaryka 708/12") is None

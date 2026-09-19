@@ -131,11 +131,17 @@ class ReceiptReading:
 
     @property
     def has_anything(self) -> bool:
+        """Je co nabídnout?
+
+        Název stanice se schválně nepočítá: je to údaj odhadnutý z
+        hlavičky a sám o sobě nestojí za to, aby se uživateli ukázala
+        nabídka. U nečitelné účtenky by to navíc znamenalo nabídnout
+        jméno vzniklé z náhodného řádku."""
         return any(
             value is not None
             for value in (
                 self.fueled_at, self.quantity, self.price_total_czk,
-                self.price_per_unit_czk, self.station,
+                self.price_per_unit_czk,
             )
         )
 
@@ -152,8 +158,12 @@ def _czech_number(text: str) -> float | None:
 
 
 def _find_date(text: str) -> date | None:
-    """Datum v českém formátu (1.2.2026, 01. 02. 2026) nebo ISO."""
-    czech = re.search(r"\b(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{4})\b", text)
+    """Datum v českém formátu (1.2.2026, 01. 02. 2026) nebo ISO.
+
+    Oddělovač smí být tečka i čárka, a klidně pokaždé jiný: tesseract
+    ze skutečných účtenek přečetl "22,10,2023" i "22.10,2023". Tečka a
+    čárka jsou na tisku vedle sebe nerozeznatelné."""
+    czech = re.search(r"\b(\d{1,2})\s*[.,]\s*(\d{1,2})\s*[.,]\s*(\d{4})\b", text)
     if czech:
         day, month, year = (int(part) for part in czech.groups())
         try:
@@ -177,7 +187,12 @@ LITER_LOOKALIKE = r"[l|I1!]"
 
 #: Číslo tak, jak ho účtenka píše: s čárkou i tečkou, s mezerou v
 #: tisících a klidně s úvodními nulami ("0047.45").
-NUMBER = r"\d[\d  ]*(?:[.,]\d+)?"
+#:
+#: Mezera SMÍ být i za desetinnou čárkou. Na skutečné účtence tesseract
+#: přečetl "0057, 46" a bez téhle tolerance z toho vyšlo 57 místo 57,46
+#: - tedy věrohodně vypadající, ale špatná hodnota. To je horší než
+#: nepřečíst nic.
+NUMBER = r"\d[\d  ]*(?:[.,]\s?\d+)?"
 
 #: České pumpy tisknou "popisek : hodnota", ne "hodnota jednotka".
 #: Na skutečné účtence to byly řádky "Litry : 0047.45" a
@@ -185,6 +200,67 @@ NUMBER = r"\d[\d  ]*(?:[.,]\d+)?"
 #: nepřečetl vůbec nic - a to je zrovna ten údaj, kvůli kterému OCR je.
 LITER_LABELS = r"litr[yůuú]?|objem|mno[žz]stv[ií]"
 KWH_LABELS = r"kwh|energie|nabito"
+
+
+#: Známé sítě čerpacích a nabíjecích stanic. Když se některá v textu
+#: najde, má přednost před hlavičkou - vyjde z toho čisté jméno místo
+#: toho, co z loga zbylo po OCR.
+KNOWN_STATIONS = (
+    "Benzina", "ORLEN", "Shell", "MOL", "OMV", "EuroOil", "ČEPRO", "CEPRO",
+    "Globus", "Tank ONO", "ONO", "Agip", "Slovnaft", "Lukoil", "Papoil",
+    "Robin Oil", "Prim", "Makro", "Avia", "ČEZ", "CEZ", "PRE", "E.ON", "EON",
+)
+
+#: Řádky, které rozhodně nejsou názvem firmy - jsou to údaje o tankování.
+_DATA_LABELS = re.compile(
+    r"stojan|[řr]idi[čc]|stroj|litr|celkem|datum|doklad|[čc]as|k[čc]|"
+    r"kwh|nafta|natural|benz[íi]n|dph|i[čc]o|dic|sp\s*\d|karta",
+    re.IGNORECASE,
+)
+
+
+def _find_station(text: str) -> str | None:
+    """Název čerpací stanice z hlavičky účtenky.
+
+    Nejdřív známé sítě kdekoliv v textu - z těch vyjde použitelné jméno.
+    Když žádná není, vezme se první řádek hlavičky, který vypadá jako
+    název firmy a ne jako údaj o tankování. U účtenky, kde se hlavička
+    nepřečetla vůbec, se radši nevrátí nic: špatný název je horší než
+    prázdné pole, protože ho uživatel jen tak nepřepíše."""
+    for station in KNOWN_STATIONS:
+        if re.search(rf"\b{re.escape(station)}\b", text, re.IGNORECASE):
+            return station
+
+    for line in text.splitlines()[:4]:
+        candidate = _clean_station_line(line)
+        if candidate:
+            return candidate
+    return None
+
+
+def _clean_station_line(line: str) -> str | None:
+    cleaned = line.strip()
+    if not cleaned or _DATA_LABELS.search(cleaned):
+        return None
+
+    # Smetí na začátku řádku: OCR z okraje účtenky často udělá "=" nebo
+    # osamocené písmeno před názvem ("=TPA CZ", "sTPA CZ").
+    cleaned = re.sub(r"^[^\wÁ-Žá-ž]+", "", cleaned)
+    cleaned = re.sub(r"^[a-z](?=[A-ZÁ-Ž])", "", cleaned)
+    cleaned = cleaned.strip(" .,-|")
+
+    letters = sum(1 for char in cleaned if char.isalpha())
+    if letters < 3 or len(cleaned) < 3:
+        return None
+    # Hlavička s názvem firmy má skoro vždycky velké písmeno. Věta psaná
+    # malými ("dekujeme za nakup") je patička, ne název - a nabídnout ji
+    # jako čerpací stanici je horší než nenabídnout nic.
+    if not any(char.isupper() for char in cleaned):
+        return None
+    # Adresa ani PSČ nejsou název firmy.
+    if re.match(r"^\d", cleaned) or re.search(r"\d{3}\s*\d{2}$", cleaned):
+        return None
+    return cleaned[:255]
 
 
 def _find_quantity(text: str) -> tuple[str | None, float | None]:
@@ -254,8 +330,11 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
     # Celková cena: hledá se u slova, ne jen "největší číslo" - na účtence
     # bývá i číslo karty nebo IČO.
     total = None
+    # "celkem" s volitelným prvním písmenem: na jedné účtence tesseract
+    # přečetl "elkem: 01826,80" a bez toho se celková cena ztratila.
+    # Kratší kmen než "elkem" by už chytal i běžná slova.
     total_match = re.search(
-        r"(?:celkem|k\s*[úu]hrad[ěe]|celkov[áa]\s*cena)\D{0,20}(\d+(?:[ .,]\d+)*)",
+        rf"(?:c?elkem|k\s*[úu]hrad[ěe]|celkov[áa]\s*cena)\D{{0,20}}({NUMBER})",
         text, re.IGNORECASE,
     )
     if total_match:
@@ -271,6 +350,7 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
         per_unit = round(total / quantity, 2)
 
     reading = ReceiptReading(
+        station=_find_station(text),
         fueled_at=_find_date(text),
         quantity=quantity,
         unit=unit,

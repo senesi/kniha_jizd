@@ -1190,3 +1190,25 @@ správněji — je to skutečně zaplacená cena za litr. Když je údaj na
 
 **Poučení pro příště:** syntetický testovací obrázek ověřil jen to, že
 parser rozumí sám sobě. Skutečný podklad ukázal chybu během minuty.
+
+**Co ukázalo sedm skutečných účtenek.** Tři chyby, které syntetický
+obrázek nemohl odhalit:
+
+- `0057, 46` se četlo jako **57** místo 57,46 — mezera za desetinnou
+  čárkou. Nejhorší druh chyby: výsledek vypadal věrohodně a uživatel by
+  ho potvrdil.
+- `22,10,2023` — tečka a čárka jsou na tisku k nerozeznání, takže
+  oddělovačem data smí být obojí a klidně pokaždé jiné.
+- `elkem:` — tesseract ztratil první písmeno u „Celkem" a celá částka
+  zmizela.
+
+**Název stanice se odhaduje, ale opatrně.** Nejdřív známé sítě
+(Benzina, ORLEN, Shell…) kdekoliv v textu — z těch vyjde čisté jméno
+místo toho, co z loga zbylo. Jinak první řádek hlavičky, který vypadá
+jako firma: má velké písmeno, není to adresa a neobsahuje slova jako
+„Stojan" nebo „Litry". Když se hlavička nepřečetla, **nevrátí se nic** —
+nabídnout „Stojan: 1 Nafta" jako čerpací stanici je horší než prázdné
+pole, protože to uživatel jen tak nepřepíše.
+
+**Samotný název stanice nestačí na nabídku.** Je to odhad z hlavičky;
+bez jediného čísla se uživateli nic neukazuje.
