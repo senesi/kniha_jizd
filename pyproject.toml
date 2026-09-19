@@ -19,6 +19,10 @@ dependencies = [
     # čitelné v každé záloze pg_dump (app/core/crypto.py).
     "cryptography>=43,<47",
     "pillow>=10.4,<11.0",
+    # OCR účtenek. Tenká obálka nad binárkou tesseractu, kterou
+    # instaluje docker/Dockerfile - nic se neposílá ven a nic se
+    # neplatí. Bez tesseractu aplikace funguje dál (app/core/ocr.py).
+    "pytesseract>=0.3.10,<0.4",
     # Náhled prvního listu PDF v seznamu dokumentů. Samostatná wheel
     # (engine z Chrome), žádné systémové balíčky navíc. Aplikace bez ní
     # funguje dál - viz app/core/previews.py.

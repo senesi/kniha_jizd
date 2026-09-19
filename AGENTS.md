@@ -37,7 +37,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 2 | výpůjčky (start/konec, km, nádrž, tachometr, foto, účel, trasa, další řidiči) | **hotovo** |
 | 3 | rezervace a kalendář | **hotovo** |
 | 4 | závady | **hotovo** |
-| 5 | tankování / nabíjení, účtenky, OCR infrastruktura | **hotovo**; chybí jen napojení skutečného OCR enginu (`OCR_PROVIDER=none`) |
+| 5 | tankování / nabíjení, účtenky, OCR | **hotovo**; OCR účtenek přes tesseract v kontejneru (`OCR_PROVIDER=tesseract`). Čtení tachometru z fotky zůstává vypnuté – viz ROZHODNUTI.md R51 |
 | 6 | servis a dokumenty vozidla | **hotovo** |
 | 6b | kola/pneumatiky a výdaje vozidla | **hotovo** (nad rámec původních etap) |
 | 7 | e-mailové notifikace | **hotovo**; připomínky termínů běží denně v 7:00 z cronu (`docs/SERVER_SETUP.md` kap. 6b), SMTP se nastavuje v aplikaci (Nastavení → Odesílání e-mailů). Dokud ho nikdo nevyplní, zůstávají upozornění jen v aplikaci |

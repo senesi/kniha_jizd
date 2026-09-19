@@ -13,12 +13,17 @@ FROM python:3.12-slim
 RUN groupadd --system --gid 1000 knihajizd && \
     useradd --system --uid 1000 --gid knihajizd --no-create-home --shell /usr/sbin/nologin knihajizd
 
-# DejaVu kvůli PDF exportu knihy jízd. Font, který reportlab přibaluje
-# (Bitstream Vera), nemá ě ř ů ť ď ň - české PDF by z něj vyšlo děravé.
-# Do repozitáře se žádný font nekopíruje, bere se z Debianu; bez něj
-# aplikace funguje dál, jen PDF přijde o diakritiku (app/core/pdf_font.py).
+# Do repozitáře se nekopíruje žádný font ani binárka - obojí z Debianu.
+#
+# fonts-dejavu-core: PDF export knihy jízd potřebuje font s českou
+#   diakritikou - ten, který přibaluje reportlab, nemá ě ř ů ť ď ň.
+# tesseract-ocr(-ces): čtení účtenek. Běží tady, nic neposílá ven a nic
+#   nestojí. Bez něj aplikace funguje dál, jen bez návrhů z účtenky.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends \
+        fonts-dejavu-core \
+        tesseract-ocr \
+        tesseract-ocr-ces \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

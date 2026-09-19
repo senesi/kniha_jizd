@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # and the app works fully with ocr_provider="none".
     ocr_provider: str = "none"
     ocr_tesseract_cmd: str = ""
+    # Čtení stavu tachometru z fotografie je schválně vypnuté. Tesseract
+    # je dobrý na účtenku z termotiskárny, ale digitální displej za
+    # sklem, v odrazech a nafocený šikmo čte špatně - a špatně přečtený
+    # stav km je horší než žádný, protože posouvá tachometr vozidla.
+    # Až bude po ruce engine, který to zvládne, stačí přepnout.
+    ocr_read_odometer: bool = False
 
     # --- PDF export (Etapa 8) -------------------------------------------
     # Cesta k TTF fontu s českou diakritikou. V produkčním obrazu je

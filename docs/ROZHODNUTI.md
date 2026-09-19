@@ -1131,3 +1131,39 @@ nafouklo — tedy horší chyba než ta, kterou to mělo opravit.
 Celkové palivo za vozidlo patří do přehledu vozidla, kde se sčítá podle
 `vehicle_id` a obojí zahrnuje už dnes (R27). Změnil se tedy jen popisek,
 aby číslo nelhalo o tom, co znamená.
+
+---
+
+## R51 — OCR čte účtenku, ne tachometr, a běží doma
+
+**Rozhodnutí.** Engine je **tesseract v kontejneru**. Čte se **jen
+účtenka**; stav tachometru z fotografie se nečte
+(`OCR_READ_ODOMETER=false`).
+
+**Proč tesseract, a ne cloud.** Zdarma, bez účtu, bez kvóty a nic
+neopouští server. Cloudové služby (Google Vision, Azure) dávají na
+fotkách z ruky výrazně lepší výsledky, ale stojí peníze nebo aspoň
+vyžadují účet s platební kartou — a bezplatné řešení je podmínka
+projektu.
+
+**Proč ne tachometr.** Tesseract je slušný na účtenku z termotiskárny:
+tmavý text na světlém, rovné řádky, tištěné písmo. Digitální displej za
+sklem, v odrazech a nafocený šikmo čte špatně. A u tachometru je špatný
+návrh **horší než žádný**: uživatel ho potvrdí, hodnota posune tachometr
+vozidla a od toho se odvíjí spotřeba i servisní intervaly. U účtenky se
+špatně přečtená cena projeví hned a opraví se snadno.
+
+**Kód pro tachometr zůstává.** `parse_odometer_text` i `read_odometer`
+jsou funkční a otestované, jen je brzdí přepínač. Až bude po ruce engine,
+který na displej stačí, je to jedna proměnná prostředí.
+
+**Předzpracování je záměrně hloupé**: šedá, zvětšení pod 1000 px,
+roztažení kontrastu. Chytřejší filtry pomáhají na jedné fotce a škodí na
+druhé; tyhle tři pomáhají skoro vždycky.
+
+**Tesseract běží ve vlákně.** Je blokující a trvá stovky milisekund až
+sekundy — v event loopu by zdržel všechny ostatní požadavky.
+
+**Výpadek nic neshodí.** Chybějící binárka, poškozený soubor i pád
+enginu končí `None` a tankování se uloží dál, jen bez návrhu. To platilo
+od začátku (zadání 14/34) a nemění se.

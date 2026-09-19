@@ -1,14 +1,24 @@
 """OCR jako pomůcka, nikdy jako závislost (zadání 8/11/25).
 
 Rozhraní je záměrně malé a poskytovatel vyměnitelný. Při
-`OCR_PROVIDER=none` (výchozí stav) `read_odometer` vždy vrátí None a
-celý tok jízdy funguje dál - uživatel prostě zadá stav km sám. Žádná
-cesta v aplikaci nesmí na úspěchu OCR záviset.
+`OCR_PROVIDER=none` vrací čtecí funkce vždy None a celý tok funguje dál
+- uživatel prostě zadá hodnoty sám. Žádná cesta v aplikaci nesmí na
+úspěchu OCR záviset.
 
 Když poskytovatel naopak hodnotu přečte, **nikdy** se neuloží rovnou:
-vrátí se do formuláře jako návrh, který uživatel potvrdí nebo přepíše
-(viz trips/router_web.py). OCR je vstup pro člověka, ne pro databázi.
+vrátí se do formuláře jako návrh, který uživatel potvrdí nebo přepíše.
+OCR je vstup pro člověka, ne pro databázi.
+
+**Čte se účtenka, ne tachometr.** Engine je tesseract, běží v
+kontejneru a nic neposílá ven. Na účtenku z termotiskárny (tmavý text
+na světlém, rovné řádky) je slušný; na digitální displej za sklem, v
+odrazech a nafocený šikmo slabý. Špatně přečtený stav km je přitom
+horší než žádný - posouvá tachometr vozidla. Čtení tachometru proto
+zůstává vypnuté (`OCR_READ_ODOMETER=false`) a kód pro něj je připravený
+na chvíli, kdy bude po ruce engine, který to zvládne.
 """
+import asyncio
+import io
 import logging
 import re
 from dataclasses import dataclass
@@ -33,8 +43,20 @@ class OdometerReading:
     raw_text: str = ""
 
 
+PROVIDER_TESSERACT = "tesseract"
+
+# Účtenka bývá vyfocená z ruky a v malém rozlišení; pod tuhle šířku se
+# před čtením zvětší, protože tesseractu drobné písmo výrazně vadí.
+MIN_OCR_WIDTH = 1000
+
+
 def is_configured() -> bool:
     return get_settings().ocr_provider not in ("", "none")
+
+
+def reads_odometer() -> bool:
+    """Čte se i stav tachometru? Viz docstring modulu - zatím ne."""
+    return is_configured() and get_settings().ocr_read_odometer
 
 
 def parse_odometer_text(text: str) -> OdometerReading | None:
@@ -68,8 +90,12 @@ async def read_odometer(image_bytes: bytes) -> OdometerReading | None:
 
     Vrací None, kdykoliv OCR není nakonfigurované, selže nebo si není
     jisté. Nikdy nevyhazuje výjimku - výpadek OCR nesmí shodit zahájení
-    ani ukončení jízdy."""
-    if not is_configured():
+    ani ukončení jízdy.
+
+    Ve výchozím nastavení vrací None vždycky: tesseract na fotku
+    tachometru nestačí a špatný návrh je tu horší než žádný (viz
+    docstring modulu)."""
+    if not reads_odometer():
         return None
     try:
         return await _read_with_provider(image_bytes)
@@ -207,9 +233,53 @@ async def read_receipt(image_bytes: bytes) -> ReceiptReading | None:
     return parse_receipt_text(text or "")
 
 
+def _prepare(image_bytes: bytes):
+    """Předzpracování účtenky pro tesseract.
+
+    Tři věci, které na fotce z ruky dělají největší rozdíl: převod do
+    šedi (barva jen mate), zvětšení drobného písma a roztažení kontrastu
+    - termotisk bývá spíš šedý než černý. Nic chytřejšího tu záměrně
+    není; složitější filtry pomáhají na jedné fotce a škodí na druhé."""
+    from PIL import Image, ImageOps
+
+    image = Image.open(io.BytesIO(image_bytes))
+    image = ImageOps.exif_transpose(image)
+    image = image.convert("L")
+
+    if image.width < MIN_OCR_WIDTH:
+        ratio = MIN_OCR_WIDTH / image.width
+        image = image.resize(
+            (MIN_OCR_WIDTH, max(1, int(image.height * ratio))), Image.LANCZOS,
+        )
+
+    return ImageOps.autocontrast(image)
+
+
+def _tesseract_text(image_bytes: bytes) -> str | None:
+    """Synchronní volání tesseractu. Běží ve vlákně, viz `_extract_text`."""
+    import pytesseract
+
+    settings = get_settings()
+    if settings.ocr_tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = settings.ocr_tesseract_cmd
+
+    # Česky i anglicky: účtenky mívají "Nafta"/"Natural" vedle "Total".
+    # Když české jazykové dato chybí, tesseract by skončil chybou -
+    # proto se na ni níž spadne zpátky na samotnou angličtinu.
+    try:
+        return pytesseract.image_to_string(_prepare(image_bytes), lang="ces+eng")
+    except pytesseract.TesseractError:
+        return pytesseract.image_to_string(_prepare(image_bytes), lang="eng")
+
+
 async def _extract_text(image_bytes: bytes) -> str | None:
-    """Napojení na engine (Etapa 5+). Až sem přibude tesseract, musí
-    platit totéž: vrátit text, nebo None."""
+    """Text z obrázku, nebo None.
+
+    Tesseract je blokující a trvá stovky milisekund až sekundy, takže
+    běží ve vlákně - jinak by zdržel celý event loop a s ním i ostatní
+    požadavky."""
     provider = get_settings().ocr_provider
-    logger.info("OCR poskytovatel %r zatím není implementovaný", provider)
-    return None
+    if provider != PROVIDER_TESSERACT:
+        logger.info("OCR poskytovatel %r není implementovaný", provider)
+        return None
+    return await asyncio.to_thread(_tesseract_text, image_bytes)
