@@ -146,3 +146,71 @@ async def test_unreadable_image_gives_nothing(monkeypatch):
     blank.save(buffer, format="PNG")
 
     assert await ocr.read_receipt(buffer.getvalue()) is None
+
+
+# --- záměny písmen, které dělá skutečný tesseract ----------------------
+#
+# Tohle nejsou vymyšlené případy: na produkci tesseract přečetl
+# "48,50 |" a "38,90 Kc/I" místo litrů. Text byl jinak správně, ale
+# parser množství i cenu za litr zahodil.
+
+@pytest.mark.parametrize("unit_char", ["l", "|", "I", "1"])
+def test_liters_survive_ocr_lookalikes(unit_char):
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(f"Nafta\n48,50 {unit_char}\n")
+    assert reading is not None
+    assert reading.quantity == 48.5
+    assert reading.unit == "l"
+
+
+@pytest.mark.parametrize("unit_char", ["l", "|", "I"])
+def test_price_per_liter_survives_ocr_lookalikes(unit_char):
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(f"38,90 Kc/{unit_char}\n")
+    assert reading is not None
+    assert reading.price_per_unit_czk == 38.9
+
+
+def test_a_number_glued_to_one_is_not_litres():
+    """„48,501" je číslo, ne 48,50 litru - tolerance nesmí zajít takhle
+    daleko."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("48,501\n")
+    assert reading is None or reading.quantity is None
+
+
+def test_a_plain_price_is_not_litres():
+    """V „1886,65 Kc" není jednotka, jen cena."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("Celkem 1886,65 Kc\n")
+    assert reading is not None
+    assert reading.quantity is None
+    assert reading.price_total_czk == 1886.65
+
+
+def test_kwh_is_not_confused_with_litres():
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text("42,00 kWh\n")
+    assert reading.unit == "kWh"
+    assert reading.quantity == 42.0
+
+
+def test_real_receipt_text_from_production():
+    """Doslova to, co tesseract přečetl z testovací účtenky na produkci."""
+    from app.core.ocr import parse_receipt_text
+
+    reading = parse_receipt_text(
+        "CERPACI STANICE ONO\nMlada Boleslav\n19.09.2026 14:32\nNafta\n\n"
+        "48,50 |\n\n38,90 Kc/I\n\nCelkem 1886,65 Kc\n"
+    )
+    assert reading is not None
+    assert reading.quantity == 48.5
+    assert reading.unit == "l"
+    assert reading.price_per_unit_czk == 38.9
+    assert reading.price_total_czk == 1886.65
+    assert reading.fueled_at is not None

@@ -169,11 +169,18 @@ def _find_date(text: str) -> date | None:
     return None
 
 
+#: Znaky, které OCR běžně plete s malým "l" u jednotky litru. Na
+#: skutečné účtence tesseract přečetl "48,50 |" a "38,90 Kc/I" - tedy
+#: svislítko a velké I. Bez téhle tolerance se množství i cena za litr
+#: zahodí, přestože je text jinak přečtený správně.
+LITER_LOOKALIKE = r"[l|I1!]"
+
+
 def parse_receipt_text(text: str) -> ReceiptReading | None:
     """Vytáhne z rozpoznaného textu, co jde. Oddělené jako čistá funkce -
     právě tady vznikají chyby (desetinná čárka, mezera v tisících,
-    jednotka přilepená k číslu), takže se to musí dát testovat bez
-    jakéhokoliv OCR enginu."""
+    jednotka přilepená k číslu, zaměněná písmena), takže se to musí dát
+    testovat bez jakéhokoliv OCR enginu."""
     if not text or not text.strip():
         return None
 
@@ -186,9 +193,18 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
     if kwh:
         unit, quantity = UNIT_KWH, _czech_number(kwh.group(1))
     else:
-        liters = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:l|litr\w*)\b", text, re.IGNORECASE)
+        # Jednotka musí stát samostatně za číslem, ne uvnitř slova -
+        # jinak by "48,50 Kc" dalo litry kvůli písmenu v "Kc". Proto
+        # mezera před a konec slova za. "1" je mezi záměnami schválně,
+        # ale jen s mezerou před sebou, aby se "48,501" nečetlo jako
+        # 48,50 l.
+        liters = re.search(
+            rf"(\d+(?:[.,]\d+)?)\s+{LITER_LOOKALIKE}(?![\w.,])|(\d+(?:[.,]\d+)?)\s*litr\w*\b",
+            text, re.IGNORECASE,
+        )
         if liters:
-            unit, quantity = UNIT_LITERS, _czech_number(liters.group(1))
+            raw = liters.group(1) or liters.group(2)
+            unit, quantity = UNIT_LITERS, _czech_number(raw)
 
     # Celková cena: hledá se u slova, ne jen "největší číslo" - na účtence
     # bývá i číslo karty nebo IČO.
@@ -203,7 +219,8 @@ def parse_receipt_text(text: str) -> ReceiptReading | None:
     per_unit = None
     # "Kč" i "Kc" i "CZK" - tiskárny na pumpách často diakritiku neumí.
     per_unit_match = re.search(
-        r"(\d+(?:[.,]\d+)?)\s*(?:kč|kc|czk)\s*/\s*(?:l|kwh)", text, re.IGNORECASE,
+        rf"(\d+(?:[.,]\d+)?)\s*(?:kč|kc|czk)\s*/\s*(?:kwh|{LITER_LOOKALIKE})",
+        text, re.IGNORECASE,
     )
     if per_unit_match:
         per_unit = _czech_number(per_unit_match.group(1))

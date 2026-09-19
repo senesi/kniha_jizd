@@ -1167,3 +1167,11 @@ sekundy — v event loopu by zdržel všechny ostatní požadavky.
 **Výpadek nic neshodí.** Chybějící binárka, poškozený soubor i pád
 enginu končí `None` a tankování se uloží dál, jen bez návrhu. To platilo
 od začátku (zadání 14/34) a nemění se.
+
+**Parser musí unést záměny písmen.** Při prvním skutečném běhu na
+produkci tesseract přečetl `48,50 |` a `38,90 Kc/I` — tedy svislítko a
+velké I místo malého „l". Text byl jinak správně, ale parser množství i
+cenu za litr zahodil. Jednotka litru se proto hledá jako `[l|I1!]`, ale
+jen tam, kde stojí samostatně za číslem: `48,501` zůstává číslo a
+`1886,65 Kc` zůstává cena. Je to přesně ten druh chyby, který se
+nedá vymyslet u stolu — našel ho až obrázek prohnaný skutečným enginem.
