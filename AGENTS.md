@@ -45,6 +45,7 @@ Aplikace musí být spustitelná po **každé** etapě, ne až na konci.
 | 9 | mapová kontrola trasy | neimplementováno (konfigurace připravená, `MAPS_PROVIDER=none`) |
 | 10 | produkce (Docker, nginx, VPS, zálohy, smoke test) | Dockerfile hotový, **na VPS zatím nic nevzniklo** |
 | 11 | audit a aktivita, soukromá vozidla uživatelů | **hotovo** (nad rámec původních etap) |
+| 12 | tankování bez jízdy, průměrná spotřeba | **hotovo** (nad rámec původních etap) |
 
 Datový model (`app/models/fleet.py`) je navržený pro všechny etapy
 najednou, aby pozdější etapy nepotřebovaly přestavbu schématu. Migrace
@@ -109,7 +110,9 @@ tam, až modul vznikne.
 app/
   core/        průřezové věci: config, db, deps (oprávnění), csrf, audit,
                photos, documents, previews (miniatury dokumentů),
-               pdf_font (diakritika v PDF), notification_types
+               pdf_font (diakritika v PDF), consumption (průměrná
+               spotřeba), odometer (posun stavu km),
+               notification_types
                (katalog typů notifikací), crypto (šifrování hesel
                v databázi), mailer, app_settings, fleet_status
                (semafor), fuel (l vs. kWh), ocr (pomůcka, ne závislost),

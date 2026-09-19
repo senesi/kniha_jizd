@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import app_settings
+from app.core import odometer
 from app.core.audit import log_action
 from app.core.deps import get_user_permission_codes
 from app.core.fuel import level_label
@@ -425,10 +426,9 @@ def _check_fuel_level(vehicle: Vehicle, fuel_level: int | None) -> None:
 
 
 def _apply_vehicle_state(vehicle: Vehicle, *, odometer_km: int, fuel_level: int | None) -> None:
-    vehicle.current_odometer_km = max(vehicle.current_odometer_km, odometer_km)
-    if fuel_level is not None:
-        vehicle.current_fuel_level = fuel_level
-    vehicle.state_updated_at = datetime.now(timezone.utc)
+    """Stav vozidla po jízdě. Pravidlo „nikdy dolů" je společné pro
+    jízdy, tankování i servis - viz app/core/odometer.py."""
+    odometer.advance(vehicle, odometer_km, fuel_level=fuel_level)
 
 
 # --- oprávnění k jízdě -------------------------------------------------

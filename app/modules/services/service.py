@@ -15,6 +15,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import odometer
 from app.core.audit import log_action
 from app.core.photos import ALLOWED_PHOTO_EXTENSIONS
 from app.models.core import User
@@ -114,6 +115,12 @@ async def add_service(
     if invoice is not None:
         await _store_invoice(db, vehicle=vehicle, record=record, actor=actor, upload=invoice, commit=False)
 
+    # Servis posouvá stav tachometru vozidla. U vozidel, která nevedou
+    # knihu jízd, je servis a tankování jediný zdroj - bez toho by
+    # tachometr zamrzl a přestal fungovat semafor prohlídky, který se
+    # počítá proti aktuálnímu stavu.
+    odometer_moved = odometer.advance(vehicle, odometer_km)
+
     # Uzavření smyčky mezi servisní knihou a semaforem na kartě vozidla.
     oil_updated = False
     if update_oil_interval and suggests_oil_update(service_types):
@@ -130,6 +137,7 @@ async def add_service(
             "service_date": service_date.isoformat(), "odometer_km": odometer_km,
             "price_czk": float(price_czk) if price_czk else None,
             "oil_interval_updated": oil_updated,
+            "odometer_moved_to": vehicle.current_odometer_km if odometer_moved else None,
             "confirmations": sorted(confirmations),
         },
     )

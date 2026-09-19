@@ -312,6 +312,25 @@
     <span class="text-accent font-bold shrink-0">&rarr;</span>
   </a>
 
+  <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/fuelings"
+     class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface">
+    <div class="min-w-0">
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">
+        {{ fuel.refuel_noun(vehicle.fuel_type) }}
+      </div>
+      {% if consumptions %}
+      <div class="text-lg font-extrabold">
+        {{ consumptions[0].per_100km | money }}
+        <span class="text-xs text-muted2">{{ consumptions[0].unit }}/100 km</span>
+      </div>
+      <div class="text-xs text-muted2">průměrná spotřeba</div>
+      {% else %}
+      <div class="text-sm text-muted2">Zapsat i bez jízdy</div>
+      {% endif %}
+    </div>
+    <span class="text-accent font-bold shrink-0">&rarr;</span>
+  </a>
+
   <a href="/kniha-jizd/vehicles/{{ vehicle.id }}/expenses"
      class="kj-card !p-4 flex items-center justify-between gap-3 hover:bg-surface sm:col-span-2">
     <div class="min-w-0">

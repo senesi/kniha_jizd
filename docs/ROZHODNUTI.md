@@ -1056,3 +1056,78 @@ někdy bude potřeba, je to administrativní zásah, ne políčko.
 
 **Vlastník se u zakládání přepíše na přihlášeného**, pokud zakládající
 není administrátor — podstrčené cizí id tak nemá žádný účinek.
+
+---
+
+## R48 — Tankování existuje i bez jízdy; tachometr posouvá i ono a servis
+
+**Rozhodnutí.** `trip_fuelings.trip_id` je nullable. Tankování se dá
+zapsat z karty vozidla, bez jakékoliv jízdy. Tabulka i model si nechávají
+jméno — `vehicle_id` v nich byl denormalizovaný od začátku, takže data
+byla vždycky vozidlová.
+
+**Proč.** U části vozidel se kniha jízd nevede a eviduje se jen tankování
+a servis; z nich se počítá průměrná spotřeba. Elektromobil nabíjený přes
+noc v depu navíc žádnou jízdu nemá vůbec — u něj to nebyl okrajový
+případ, ale ten normální, a dosud se nabíjení nedalo zapsat vůbec.
+
+**Bez jízdy je stav tachometru povinný**, u jízdy zůstává nepovinný. Je
+to jediné, z čeho se u takového vozidla dá spočítat spotřeba, a jediné,
+co posune tachometr. Záznam bez něj by byl k ničemu právě tam, kde na
+něm nejvíc záleží.
+
+**Tachometr posouvá jízda, tankování i servis** — jedno pravidlo v
+`app/core/odometer.py`, ne tři kopie. Bez toho by u vozidla bez knihy
+jízd tachometr zamrzl na počáteční hodnotě a přestal by fungovat semafor
+servisní prohlídky, který se počítá proti aktuálnímu stavu. Snížit stav
+umí dál výhradně administrativní oprava se zdůvodněním (zadání 5/32);
+nižší hodnota u tankování je varování k potvrzení, ale stav vozidla
+nesníží.
+
+---
+
+## R49 — Spotřeba se počítá průměrem přes období, ne mezi dvěma tankováními
+
+**Rozhodnutí.** `app/core/consumption.py`, čistá funkce:
+
+```
+spotřeba = (součet objemů od 2. tankování dál) / (km poslední − km první) × 100
+```
+
+**První objem se nepočítá.** To palivo bylo v nádrži ještě před prvním
+odečteným stavem tachometru a k ujetým kilometrům mezi prvním a
+posledním tankováním nepatří. Bez téhle úpravy vychází spotřeba
+systematicky vyšší — je to celý trik za tím vzorcem.
+
+**Proč ne „plná–plná".** Přesnější metoda potřebuje vědět, jestli se
+tankovalo do plné, tedy zaškrtávátko, které budou řidiči vyplňovat
+nespolehlivě. Nepřesný údaj, kterému se věří, je horší než průměr, který
+se ke skutečnosti přiblíží sám.
+
+**Číslo nese svou důvěryhodnost.** `is_reliable` je False pod tři
+tankování nebo pod 100 km a obrazovka to napíše. Průměr ze dvou
+tankování na padesáti kilometrech je formálně spočítaný a přitom nic
+neříká.
+
+**Jednotky se nesčítají.** Plug-in hybrid dostane dvě čísla — litry a
+kWh jsou dvě různé veličiny.
+
+**`None` znamená „zatím nevíme", ne nulu.** Nula by na kartě vozidla
+vypadala jako změřená hodnota.
+
+---
+
+## R50 — Souhrn knihy jízd zůstává o jízdách
+
+**Rozhodnutí.** „Za palivo při jízdách" v knize jízd počítá dál jen
+tankování navázané na jízdu. Tankování mimo jízdu do něj nevstupuje.
+
+**Proč ne jinak.** Nejdřív jsem chtěl join přepsat z `trip_id` na
+`vehicle_id`, aby se započítalo obojí. To by ale udělalo kartézský
+součin (každá jízda × každé tankování vozidla) a součet naopak
+nafouklo — tedy horší chyba než ta, kterou to mělo opravit.
+
+**Správná odpověď je jiná:** kniha jízd je o jízdách a její souhrn taky.
+Celkové palivo za vozidlo patří do přehledu vozidla, kde se sčítá podle
+`vehicle_id` a obojí zahrnuje už dnes (R27). Změnil se tedy jen popisek,
+aby číslo nelhalo o tom, co znamená.

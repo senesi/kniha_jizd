@@ -7,20 +7,25 @@
 {% block content %}
 {% set noun = fuel.refuel_noun(vehicle.fuel_type) %}
 {% set unit = form.get('unit') or default_unit %}
+{# Tentýž formulář slouží tankování u jízdy i mimo ni. Bez jízdy se
+   vrací na vozidlo a stav tachometru je povinný - je to jediné, z čeho
+   se pak dá spočítat spotřeba. #}
+{% set back_url = "/kniha-jizd/trips/" ~ trip.id if trip else "/kniha-jizd/vehicles/" ~ vehicle.id ~ "/fuelings" %}
+{% set post_url = "/kniha-jizd/trips/" ~ trip.id ~ "/fuelings/new" if trip else "/kniha-jizd/vehicles/" ~ vehicle.id ~ "/fuelings/new" %}
 
 <div class="flex items-start justify-between gap-3 mb-4">
   <div class="min-w-0">
     <h1 class="text-2xl font-extrabold tracking-tight">{{ noun }}</h1>
     <p class="text-muted2">{{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}</p>
   </div>
-  <a href="/kniha-jizd/trips/{{ trip.id }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
+  <a href="{{ back_url }}" class="text-sm text-muted hover:text-ink shrink-0 mt-1">Zpět</a>
 </div>
 
 {% if error %}
 <div class="rounded-xl bg-danger/10 text-danger border border-danger/30 px-4 py-3 mb-4 text-sm font-semibold">{{ error }}</div>
 {% endif %}
 
-<form method="post" action="/kniha-jizd/trips/{{ trip.id }}/fuelings/new" enctype="multipart/form-data">
+<form method="post" action="{{ post_url }}" enctype="multipart/form-data">
   {{ csrf_field(request) }}
   {% if receipt_attachment_id %}
   <input type="hidden" name="receipt_attachment_id" value="{{ receipt_attachment_id }}">
@@ -77,7 +82,22 @@
       </div>
     </div>
 
-    <p class="text-xs text-muted mt-2">Stačí datum a množství. Ostatní je nepovinné.</p>
+    {% if not trip %}
+    <div>
+      <label class="kj-label">Stav tachometru (km) <span class="text-danger">*</span></label>
+      <input class="kj-input !text-lg !font-bold" type="number" min="0" name="odometer_km" required
+             data-ocr-field="odometer_km" value="{{ value_of('odometer_km') }}">
+      <p class="text-xs text-muted mt-1">
+        Z rozdílu stavů mezi tankováními se počítá průměrná spotřeba. Zároveň se jím
+        posune stav vozidla.
+      </p>
+    </div>
+    {% endif %}
+
+    <p class="text-xs text-muted mt-2">
+      {% if trip %}Stačí datum a množství. Ostatní je nepovinné.
+      {% else %}Datum, množství a stav tachometru. Ostatní je nepovinné.{% endif %}
+    </p>
   </div>
 
   <details class="kj-card mb-4" {% if form.get('price_total_czk') or form.get('station') or ocr_suggestion %}open{% endif %}>
@@ -99,10 +119,12 @@
         <input class="kj-input" name="station" maxlength="255"
                data-ocr-field="station" value="{{ value_of('station') }}">
       </div>
+      {% if trip %}
       <div>
         <label class="kj-label">Stav tachometru (km)</label>
         <input class="kj-input" type="number" min="0" name="odometer_km" value="{{ value_of('odometer_km') }}">
       </div>
+      {% endif %}
       {% if not fuel.is_electric(vehicle.fuel_type) %}
       <div>
         <label class="kj-label">Druh paliva</label>
@@ -131,7 +153,7 @@
   </div>
 
   <button type="submit" class="kj-btn-hero">Uložit {{ noun.lower() }}</button>
-  <a href="/kniha-jizd/trips/{{ trip.id }}" class="kj-btn-secondary w-full mt-2">Zrušit</a>
+  <a href="{{ back_url }}" class="kj-btn-secondary w-full mt-2">Zrušit</a>
 </form>
 
 {% if ocr_suggestion %}

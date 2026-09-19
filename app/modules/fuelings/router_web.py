@@ -19,13 +19,16 @@ from app.core.fuel import available_units, default_unit
 from app.core.photos import PhotoTooLarge, UnsupportedPhotoType
 from app.core.templates import render_page
 from app.models.core import User
-from app.models.fleet import FUEL_TYPES, Trip
+from app.core.consumption import for_vehicle as consumption_for_vehicle
+from app.models.fleet import FUEL_TYPES, Trip, Vehicle
 from app.modules.fuelings import repository, service
 from app.modules.trips import repository as trips_repository
+from app.modules.vehicles import repository as vehicles_repository
 from app.modules.vehicles import service as vehicles_service
 
 fuelings_router = APIRouter(tags=["fuelings-web"])
 trip_fuelings_router = APIRouter(tags=["fuelings-web"])
+vehicle_fuelings_router = APIRouter(tags=["fuelings-web"])
 
 CREATE = "fleet.trip.create"
 
@@ -88,8 +91,9 @@ async def _read_receipt(upload: UploadFile | None):
     return upload.filename, upload.content_type, data
 
 
-def _form_context(trip: Trip, **extra) -> dict:
-    vehicle = trip.vehicle
+def _form_context(vehicle: Vehicle, trip: Trip | None = None, **extra) -> dict:
+    """`trip=None` je tankování mimo jízdu - formulář je jinak stejný,
+    jen má povinný stav tachometru a vrací se na kartu vozidla."""
     return {
         "trip": trip,
         "vehicle": vehicle,
@@ -98,6 +102,14 @@ def _form_context(trip: Trip, **extra) -> dict:
         "fuel_types": FUEL_TYPES,
         **extra,
     }
+
+
+async def _load_vehicle(db: AsyncSession, vehicle_id: uuid.UUID, *, user: User) -> Vehicle:
+    vehicle = await vehicles_repository.get_vehicle(db, vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vozidlo nebylo nalezeno.")
+    assert_vehicle_visible(await get_user_permission_codes(db, user.id), vehicle, user)
+    return vehicle
 
 
 # --- formulář ---------------------------------------------------------
@@ -114,7 +126,7 @@ async def fueling_new_form(
     return await render_page(
         request, "fueling_form.html", user, db,
         **_form_context(
-            trip,
+            trip.vehicle, trip,
             error=None, warnings=[], ocr_suggestion=None, receipt_attachment_id=None,
             # Datum se předvyplní dneškem - řidič tankuje dnes, ne někdy.
             form={"fueled_at": date.today().isoformat()},
@@ -152,7 +164,7 @@ async def fueling_create(
         return await render_page(
             request, "fueling_form.html", user, db, status_code=status_code,
             **_form_context(
-                trip, error=error, warnings=warnings, ocr_suggestion=suggestion,
+                trip.vehicle, trip, error=error, warnings=warnings, ocr_suggestion=suggestion,
                 receipt_attachment_id=attachment_id or stashed_id, form=payload,
             ),
         )
@@ -176,7 +188,7 @@ async def fueling_create(
 
     try:
         await service.add_fueling(
-            db, trip=trip, actor=user,
+            db, vehicle=trip.vehicle, trip=trip, actor=user,
             fueled_at=_to_date(payload["fueled_at"]),
             quantity=_to_float(payload["quantity"]),
             unit=payload["unit"],
@@ -226,3 +238,133 @@ async def fueling_delete(
     await _assert_can_manage(db, trip, user)
     await service.delete_fueling(db, fueling=fueling, actor=user)
     return flash.redirect(f"/kniha-jizd/trips/{trip.id}", "fueling_deleted")
+
+
+# --- tankování mimo jízdu (z karty vozidla) ---------------------------
+#
+# Vozidla, u kterých se kniha jízd nevede, mají tankování a servis jako
+# jediný zdroj dat; elektromobil nabíjený v depu žádnou jízdu nemá.
+# Formulář i ukládání jsou tytéž jako u jízdy - liší se jen tím, že stav
+# tachometru je povinný a návrat vede na vozidlo.
+
+@vehicle_fuelings_router.get("/vehicles/{vehicle_id}/fuelings")
+async def vehicle_fuelings(
+    request: Request,
+    vehicle_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    vehicle = await _load_vehicle(db, vehicle_id, user=user)
+    fuelings = await repository.list_for_vehicle(db, vehicle.id, limit=200)
+    return await render_page(
+        request, "vehicle_fuelings.html", user, db,
+        vehicle=vehicle,
+        fuelings=fuelings,
+        totals=await repository.totals_for_vehicle(db, vehicle.id),
+        # Spotřeba se počítá ze VŠECH tankování vozidla, ne jen z těch
+        # zobrazených - limit je vlastnost výpisu, ne dat.
+        consumptions=consumption_for_vehicle(
+            await repository.list_for_vehicle(db, vehicle.id, limit=10_000)
+        ),
+    )
+
+
+@vehicle_fuelings_router.get("/vehicles/{vehicle_id}/fuelings/new")
+async def vehicle_fueling_new_form(
+    request: Request,
+    vehicle_id: uuid.UUID,
+    user: User = Depends(require_permission(CREATE)),
+    db: AsyncSession = Depends(get_db),
+):
+    vehicle = await _load_vehicle(db, vehicle_id, user=user)
+    return await render_page(
+        request, "fueling_form.html", user, db,
+        **_form_context(
+            vehicle, None,
+            error=None, warnings=[], ocr_suggestion=None, receipt_attachment_id=None,
+            form={
+                "fueled_at": date.today().isoformat(),
+                # Předvyplní se poslední známý stav - u pumpy se obvykle
+                # opíše číslo o něco vyšší, ne úplně nové.
+                "odometer_km": str(vehicle.current_odometer_km),
+            },
+        ),
+    )
+
+
+@vehicle_fuelings_router.post("/vehicles/{vehicle_id}/fuelings/new", dependencies=[Depends(verify_csrf)])
+async def vehicle_fueling_create(
+    request: Request,
+    vehicle_id: uuid.UUID,
+    receipt: UploadFile | None = File(None),
+    user: User = Depends(require_permission(CREATE)),
+    db: AsyncSession = Depends(get_db),
+):
+    vehicle = await _load_vehicle(db, vehicle_id, user=user)
+
+    form = await request.form()
+    payload = {
+        "fueled_at": _text(form, "fueled_at"),
+        "quantity": _text(form, "quantity"),
+        "unit": _text(form, "unit") or default_unit(vehicle.fuel_type),
+        "price_total_czk": _text(form, "price_total_czk"),
+        "price_per_unit_czk": _text(form, "price_per_unit_czk"),
+        "station": _text(form, "station"),
+        "odometer_km": _text(form, "odometer_km"),
+        "fuel_type": _text(form, "fuel_type") or None,
+        "note": _text(form, "note"),
+    }
+    confirmations = {value for value in form.getlist("confirm") if isinstance(value, str)}
+    stashed_id = _stashed_id(form)
+
+    async def rerender(error, warnings, suggestion=None, status_code=400, attachment_id=None):
+        return await render_page(
+            request, "fueling_form.html", user, db, status_code=status_code,
+            **_form_context(
+                vehicle, None, error=error, warnings=warnings, ocr_suggestion=suggestion,
+                receipt_attachment_id=attachment_id or stashed_id, form=payload,
+            ),
+        )
+
+    photo = await _read_receipt(receipt)
+
+    # Stejný postup jako u jízdy: OCR nikdy neuloží samo, jen nabídne
+    # hodnoty k potvrzení (zadání 15/25).
+    if photo is not None and "ocr" not in confirmations:
+        reading = await ocr.read_receipt(photo[2])
+        if reading is not None:
+            try:
+                attachment = await vehicles_service.add_attachment(
+                    db, vehicle_id=vehicle.id, kind="fuel_receipt",
+                    original_filename=photo[0], content_type=photo[1], data=photo[2],
+                    actor_id=user.id,
+                )
+            except (PhotoTooLarge, UnsupportedPhotoType) as error:
+                return await rerender(f"Účtenku se nepodařilo uložit: {error}", [])
+            return await rerender(None, [], suggestion=reading, status_code=200, attachment_id=attachment.id)
+
+    try:
+        await service.add_fueling(
+            db, vehicle=vehicle, trip=None, actor=user,
+            fueled_at=_to_date(payload["fueled_at"]),
+            quantity=_to_float(payload["quantity"]),
+            unit=payload["unit"],
+            price_total_czk=_to_float(payload["price_total_czk"]),
+            price_per_unit_czk=_to_float(payload["price_per_unit_czk"]),
+            station=payload["station"],
+            odometer_km=_to_int(payload["odometer_km"]),
+            fuel_type=payload["fuel_type"],
+            note=payload["note"],
+            confirmations=confirmations,
+            ocr_confirmed="ocr" in confirmations,
+            receipt=photo,
+            receipt_attachment_id=stashed_id,
+        )
+    except service.FuelingWarning as warning:
+        return await rerender(None, [warning], status_code=200)
+    except service.FuelingError as error:
+        return await rerender(str(error), [])
+    except (PhotoTooLarge, UnsupportedPhotoType) as error:
+        return await rerender(f"Účtenku se nepodařilo uložit: {error}", [])
+
+    return flash.redirect(f"/kniha-jizd/vehicles/{vehicle.id}/fuelings", "fueling_added")

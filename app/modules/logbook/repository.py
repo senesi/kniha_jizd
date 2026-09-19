@@ -107,6 +107,11 @@ async def summary(db: AsyncSession, flt: LogbookFilter, *, codes: set[str], user
 
     # Tankování se sčítá zvlášť: jedna jízda jich může mít víc a přes
     # JOIN by znásobila počet jízd i ujeté km.
+    #
+    # Počítá se výhradně tankování NAVÁZANÉ NA JÍZDU. Tankování mimo
+    # jízdu (vozidla bez knihy jízd, nabíjení v depu) sem nepatří -
+    # kniha jízd je o jízdách. Celkové palivo za vozidlo je v přehledu
+    # vozidla, kde se sčítá podle vehicle_id a obojí zahrnuje.
     # select_from(Trip) je nutné: bez něj si SQLAlchemy odvodí FROM z
     # vybraných sloupců (tedy trip_fuelings) a JOIN na vozidla přes
     # trips.vehicle_id pak nemá na co navázat.

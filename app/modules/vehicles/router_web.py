@@ -26,6 +26,7 @@ from app.core.access import (
     visible_vehicles_condition,
 )
 from app.core.config import get_settings
+from app.core.consumption import for_vehicle as consumption_for_vehicle
 from app.core.csrf import verify_csrf
 from app.core.db import get_db
 from app.core.deps import get_current_user, get_user_permission_codes, require_any_permission, require_permission
@@ -338,6 +339,10 @@ async def vehicle_detail(
         wheels_service=wheels_service,
         expense_totals=await expenses_repository.combined_totals(db, vehicle.id),
         recent_expenses=await expenses_repository.list_for_vehicle(db, vehicle.id, limit=3),
+        # Spotřeba ze všech tankování vozidla (app/core/consumption.py).
+        consumptions=consumption_for_vehicle(
+            await fuelings_repository.list_for_vehicle(db, vehicle.id, limit=10_000)
+        ),
     )
 
 

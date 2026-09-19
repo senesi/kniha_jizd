@@ -97,7 +97,7 @@
       <div class="text-2xl font-extrabold">{{ summary.fuelings_count }}</div>
     </div>
     <div>
-      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Za palivo</div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Za palivo při jízdách</div>
       <div class="text-2xl font-extrabold">
         {% if summary.fuelings_amount %}{{ summary.fuelings_amount | money }} <span class="text-sm text-muted2">Kč</span>
         {% else %}<span class="text-muted text-base">–</span>{% endif %}

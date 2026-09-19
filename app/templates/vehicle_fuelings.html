@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ fuel.refuel_noun(vehicle.fuel_type) }} {{ vehicle.license_plate }} &ndash; Kniha jízd{% endblock %}
+
+{% block content %}
+{% set noun = fuel.refuel_noun(vehicle.fuel_type) %}
+
+<div class="flex items-start justify-between gap-3 mb-4">
+  <div class="min-w-0">
+    <h1 class="text-2xl font-extrabold tracking-tight">{{ noun }}</h1>
+    <a href="/kniha-jizd/vehicles/{{ vehicle.id }}" class="text-muted2 hover:text-accent">
+      {{ vehicle.license_plate }} &middot; {{ vehicle.brand }} {{ vehicle.model }}
+    </a>
+  </div>
+</div>
+
+<a href="/kniha-jizd/vehicles/{{ vehicle.id }}/fuelings/new"
+   class="kj-btn w-full sm:w-auto inline-block text-center mb-4">
+  + {{ noun }} bez jízdy
+</a>
+
+{# Průměrná spotřeba. U vozidel, která nevedou knihu jízd, je tohle
+   hlavní číslo celé obrazovky - proto je nahoře a velké. #}
+{% if consumptions %}
+<div class="kj-card mb-4">
+  <h2 class="text-sm font-bold uppercase tracking-wide text-muted2 mb-3">Průměrná spotřeba</h2>
+  <div class="grid sm:grid-cols-2 gap-4">
+    {% for consumption in consumptions %}
+    <div>
+      <div class="text-3xl font-extrabold">
+        {{ consumption.per_100km | money }}
+        <span class="text-base text-muted2">{{ consumption.unit }}/100 km</span>
+      </div>
+      <div class="text-xs text-muted2 mt-1">
+        z {{ consumption.fueling_count }} {{ noun | lower }} přes {{ consumption.distance_km | km }} km
+        ({{ consumption.first_odometer_km | km }} – {{ consumption.last_odometer_km | km }} km)
+      </div>
+      {% if not consumption.is_reliable %}
+      <div class="text-xs text-warning font-semibold mt-1">
+        Orientační – málo záznamů nebo krátký úsek.
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% elif fuelings %}
+<div class="kj-card mb-4 text-sm text-muted2">
+  Spotřebu zatím nelze spočítat – potřebuje aspoň dvě {{ noun | lower }}
+  s vyplněným stavem tachometru.
+</div>
+{% endif %}
+
+{% if totals %}
+<div class="kj-card mb-4">
+  <div class="grid grid-cols-2 gap-4">
+    {% for total in totals %}
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wide text-muted2">Celkem {{ total.unit }}</div>
+      <div class="text-2xl font-extrabold">{{ fuel.format_quantity(total.quantity, total.unit) }}</div>
+      <div class="text-xs text-muted2">
+        {{ total.count }}× {% if total.price %}&middot; {{ total.price | money }} Kč{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if not fuelings %}
+<div class="kj-card text-center text-muted2">
+  Zatím žádné {{ noun | lower }}.
+</div>
+{% endif %}
+
+<div class="grid gap-2">
+  {% for fueling in fuelings %}
+  <div class="kj-card !p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-extrabold">{{ fuel.format_quantity(fueling.quantity, fueling.unit) }}</span>
+          <span class="text-sm text-muted2">{{ fueling.fueled_at | d }}</span>
+          {% if not fueling.trip_id %}
+          {# Bez jízdy - ať je poznat, odkud záznam je. #}
+          <span class="kj-badge bg-surface text-muted2 border border-divider">mimo jízdu</span>
+          {% endif %}
+        </div>
+        <div class="text-xs text-muted2 mt-1">
+          {% if fueling.odometer_km %}{{ fueling.odometer_km | km }} km{% else %}
+          <span class="text-warning">bez stavu tachometru – nepočítá se do spotřeby</span>{% endif %}
+          {% if fueling.station %} &middot; {{ fueling.station }}{% endif %}
+        </div>
+        {% if fueling.note %}
+        <div class="text-xs text-muted2 mt-1">{{ fueling.note }}</div>
+        {% endif %}
+        {% if fueling.trip_id %}
+        <a href="/kniha-jizd/trips/{{ fueling.trip_id }}" class="text-xs text-accent hover:underline">
+          zobrazit jízdu
+        </a>
+        {% endif %}
+      </div>
+      <div class="text-right shrink-0">
+        {% if fueling.price_total_czk %}
+        <div class="font-bold">{{ fueling.price_total_czk | money }} Kč</div>
+        {% endif %}
+        {% if fueling.price_per_unit_czk %}
+        <div class="text-xs text-muted2">{{ fueling.price_per_unit_czk | money }} Kč/{{ fueling.unit }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
